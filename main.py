@@ -8,7 +8,7 @@ import sys, time
 import operator
 
 ANALYSIS = True
-REFRESH_DATABASE = True
+REGENERATE = True
 LOGGING = True
 VISUALIZATION = True
 EVALUATE_CENTRALITY = True
@@ -16,12 +16,47 @@ SourceURL = "http://breadstyx.tumblr.com/notes/128187440953/rvY4jeyS6"
 
 dumpfile = "score_dump"
 
+def scrapping(FetchUrl, q, l):
+	url = ""
+	notes=[]
+	reblogs = 0
+	noteCount = 0
+
+	print "\n Scrapping pages to get the notes.  -- Fuck The API"
+	while(True):
+		page = requests.get(FetchUrl+url)
+		soup = BeautifulSoup(page.text)
+		for l in soup.findAll("li"):
+			noteCount += 1
+			if(len(l.findAll("a"))>2):
+				reblogs+=1
+				#print(l.findAll("a")[1].contents[0]+" from "+l.findAll("a")[2].contents[0]+": Added !")
+				notes+=[[str(l.findAll("a")[1].contents[0]), str(l.findAll("a")[2].contents[0])]]
+		if "original_post" in l['class']:
+			print("\r\t\t\t\t\t\t\t\t\r\t\t\r\t"+str(reblogs)+" reblogs added to list !\n")
+			print("\r\t\t\t\t\t\t\t\t\r\t\t\r\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs.\n")
+			break
+		try:
+			urlbis=url
+			url="?"+str(soup.findAll("a", attrs={"class":"more_notes_link"})[0].contents[3]).split('GET\',')[1].split(',true')[0][1:-1].split("?")[1]
+		except IndexError:
+			print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
+			break
+	
+	q.put_nowait(list(set([n[0] for n in notes])))
+	q.put_nowait(notes)
+
+
+def flush():
+	print "\r\t\t\t\t\t\t\t\t\r",
+
 def loadingtime(lock):
 	j = 0
 	while True:
 		time.sleep(0.5)
 		lock.acquire(True)
-		sys.stdout.write("\r\t\t\t\t\t\t \r\t\tLoading"+"".join(["." for counter in range(j%4)]))
+		flush()
+		sys.stdout.write("\r\t\tLoading"+"".join(["." for counter in range(j%4)]))
 		lock.release()
 		j+=1
 
@@ -62,46 +97,32 @@ def new_db(src, data, q, l):
 			if n[1] == user:
 				db[user] += [n[0]]
 	q.put(db)
-	q.put('STOP')
 	q.close()
 	l.release()
 
 if __name__=='__main__':
 
 	global Score, central
+	results = Queue()
+	lock = Lock()
+	lockPrint = Lock()
+	dummy = Lock()
 
-	if(REFRESH_DATABASE):
-		notes=[]
-		reblogs = 0
-		noteCount = 0
-		dotdot = 0
+	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v0.5 *--  "
 
-		url=""
+	if(REGENERATE):
 
-		print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v0.5 *--  "
-
-		print "\n Scrapping pages to get the notes.  -- Fuck The API"
-		while(True):
-			print "\r\t\t\t\t\t\t\t\t\r\t\tLoading"+"".join(["." for counter in range(dotdot%4)]),
-			dotdot+=1
-			page = requests.get(SourceURL+url)
-			soup = BeautifulSoup(page.text)
-			for l in soup.findAll("li"):
-				noteCount += 1
-				if(len(l.findAll("a"))>2):
-					reblogs+=1
-					#print(l.findAll("a")[1].contents[0]+" from "+l.findAll("a")[2].contents[0]+": Added !")
-					notes+=[[str(l.findAll("a")[1].contents[0]), str(l.findAll("a")[2].contents[0])]]
-			if "original_post" in l['class']:
-				print("\r\t\t\t\t\t\t\t\t\r\t\t\r\t"+str(reblogs)+" reblogs added to list !\n")
-				print("\r\t\t\t\t\t\t\t\t\r\t\t\r\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs.\n")
-				break
-			try:
-				urlbis=url
-				url="?"+str(soup.findAll("a", attrs={"class":"more_notes_link"})[0].contents[3]).split('GET\',')[1].split(',true')[0][1:-1].split("?")[1]
-			except IndexError:
-				print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
-				break
+		p1 = Process(target = loadingtime, args=[lockPrint])
+		p1.start()
+		p2 = Process(target = scrapping, args=(SourceURL, results, lock))
+		p2.start()
+		time.sleep(10)
+		lock.acquire(True)
+		notes = results.get()
+		users = results.get()
+		time.sleep(.1)
+		lock.release()
+		p1.terminate()
 
 		if(LOGGING):
 			print " LOG - Writing a log in readable_note_dump"
@@ -109,27 +130,17 @@ if __name__=='__main__':
 			for n in notes:
 				dump.write(" reblogged from : ".join(n)+"\n")
 
-		notesbis = [n[0] for n in notes]
-		notesbis = list(set(notesbis))
-
-		users = notesbis
-		notes = notes
-
 		print " Reformatting data so it can be easily converted to Graph later."
-		result = Queue()
-		lck = Lock()
-		dummy = Lock()
 
 		p1 = Process(target = loadingtime, args=[dummy])
 		p1.start()
-		p2 = Process(target = new_db, args=(users, notes, result, lck))
+		p2 = Process(target = new_db, args=(users, notes, results, lock))
 		p2.start()
 		time.sleep(10)
-		lck.acquire(True)
-		for i in iter(result.get, 'STOP'):
-			database = i
+		lock.acquire(True)
+		database = results.get()
 		time.sleep(.1)
-		lck.release()
+		lock.release()
 		p1.terminate()
 		print("\r\t\t\t\t\t\t\t\t\r\t\t\r\tData formatted!")
 
