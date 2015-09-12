@@ -2,7 +2,7 @@ import requests
 from BeautifulSoup import BeautifulSoup
 import pickle
 import networkx
-from multiprocessing import Process, Lock, Queue
+from multiprocessing import Process, Lock, Queue, Value
 from multiprocessing.queues import SimpleQueue
 import sys, time
 import operator
@@ -45,18 +45,23 @@ def scrapping(FetchUrl, q, l):
 	
 	q.put_nowait(list(set([n[0] for n in notes])))
 	q.put_nowait(notes)
+	q.put_nowait(noteCount)
 
 
 def flush():
 	print "\r\t\t\t\t\t\t\t\t\r",
 
-def loadingtime(lock):
+def loadingtime(lock, perc=None):
 	j = 0
 	while True:
 		time.sleep(0.5)
 		lock.acquire(True)
 		flush()
-		sys.stdout.write("\r\t\tLoading"+"".join(["." for counter in range(j%4)]))
+		sys.stdout.write("\r\t\tLoading"+ ("".join(["." for counter in range(j%4)]) if (perc == None) else (" "+str(int(perc.value))+"% " + \
+																																			("/" if (j%4 == 0) else \
+																																			("-" if (j%4 == 1) else \
+																																			("\\" if (j%4 == 2) else \
+																																			("|")))))))
 		lock.release()
 		j+=1
 
@@ -88,14 +93,19 @@ def calcCentrality(G, ret, l, l2):
 	ret.close()
 	return
 
-def new_db(src, data, q, l):
+def new_db(src, data, q, l, p):
 	db = {}
 	l.acquire(True)
+	maxlength = len(src)*len(data)
+	progress = 0
 	for user in src:
 		db[user] = []
 		for n in sorted(data):
-			if n[1] == user:
+			save = p.value
+			if (n[1] == user):
 				db[user] += [n[0]]
+			progress += 1	
+			p.value = progress*1.0/maxlength*100.0
 	q.put(db)
 	q.close()
 	l.release()
@@ -112,19 +122,34 @@ if __name__=='__main__':
 
 	if(REGENERATE):
 
-		p1 = Process(target = loadingtime, args=[lockPrint])
-		p1.start()
-		p2 = Process(target = scrapping, args=(SourceURL, results, lock))
-		p2.start()
-		time.sleep(10)
-		lock.acquire(True)
-		notes = results.get()
-		users = results.get()
-		time.sleep(.1)
-		lock.release()
-		p1.terminate()
+		if False:
+			p1 = Process(target = loadingtime, args=[lockPrint])
+			p1.start()
+			p2 = Process(target = scrapping, args=(SourceURL, results, lock))
+			p2.start()
+			time.sleep(10)
+			lock.acquire(True)
+			users = results.get()
+			notes = results.get()
+			noteCount = results.get()
+			time.sleep(.1)
+			lock.release()
+			p1.terminate()
+
+			d = open("debug", 'w')
+			pickle.dump([users, notes, noteCount], d)
+			d.close()
+		else:
+			d = open("debug", 'r')
+			a = pickle.load(d)
+			users = a[0]
+			notes = a[1]
+			noteCount = a[2]
+			d.close()
+
 
 		if(LOGGING):
+			flush()
 			print " LOG - Writing a log in readable_note_dump"
 			dump = open("readable_note_dump", 'w')
 			for n in notes:
@@ -132,9 +157,10 @@ if __name__=='__main__':
 
 		print " Reformatting data so it can be easily converted to Graph later."
 
-		p1 = Process(target = loadingtime, args=[dummy])
+		progress = Value('d', 0.0)
+		p1 = Process(target = loadingtime, args=(dummy, progress))
 		p1.start()
-		p2 = Process(target = new_db, args=(users, notes, results, lock))
+		p2 = Process(target = new_db, args=(users, notes, results, lock, progress))
 		p2.start()
 		time.sleep(10)
 		lock.acquire(True)
@@ -142,7 +168,8 @@ if __name__=='__main__':
 		time.sleep(.1)
 		lock.release()
 		p1.terminate()
-		print("\r\t\t\t\t\t\t\t\t\r\t\t\r\tData formatted!")
+		flush()
+		print("\tData formatted!")
 
 
 		if(LOGGING):
