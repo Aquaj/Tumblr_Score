@@ -4,18 +4,45 @@ import pickle
 import networkx
 from multiprocessing import Process, Lock, Queue, Value
 from multiprocessing.queues import SimpleQueue
-import sys, time
-import operator
-import math
+import sys, time, re
+import pytumblr
+
+# client = pytumblr.TumblrRestClient(
+#     'uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu',
+#     'bRORrMhgu5uiqQI6jkRK4fmbZBQN3WDqeUmZjX9H6ULRVUJI4u',
+#     '9eiFTlrSFD6XkaKN7lvUmMUdFYiPGkP1a9rxPbQtpKCDXwuuJq',
+#     'WJQ1EbBC52fXV19zsgLd0GMoxlEfC0O8vYLjNAPcwhEa97MMFa'
+# )
+client = pytumblr.TumblrRestClient('uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu')
+notesClient = client.posts('breadstyx.tumblr.com', id=128187440953, notes_info=True)['posts'][0]
+toDo = notesClient['note_count']
 
 ANALYSIS = True
 REGENERATE = False
 LOGGING = True
 VISUALIZATION = True
 EVALUATE_CENTRALITY = True
-SourceURL = "http://breadstyx.tumblr.com/notes/128187440953/rvY4jeyS6"
+postID = 128187440953
+blogSource = "breadstyx"
+SourceURL = "http://"+str(blogSource)+".tumblr.com/notes/"+str(postID)+"/rvY4jeyS6"
+
+i = 0
+while True:
+	while notesClient['notes'][i]["type"] != "reblog":
+		i += 1
+	page = requests.get(notesClient['notes'][i]["blog_url"]+"posts/"+notesClient['notes'][i]["post_id"])
+	print notesClient['notes'][i]["blog_url"]+"post/"+notesClient['notes'][i]["post_id"]
+	soup = BeautifulSoup(page.text, convertEntities=BeautifulSoup.HTML_ENTITIES)
+	if notesClient['notes'][i]["blog_url"].find("thatbamfsidekick") != -1 :
+		#for x in soup.findAll("body"):    # will give you all a tag
+		print soup.findAll("a")
+	i += 1
+	if len(soup.findAll("a", "more_notes_link")) != 0:
+		break
 
 dumpfile = "score_dump"
+
+exit()
 
 def scrapping(FetchUrl, p, q, l, lp):
 	url = ""
@@ -26,11 +53,12 @@ def scrapping(FetchUrl, p, q, l, lp):
 	print p, q, l, lp
 
 	lp.acquire()
-	gettheNotes = "/".join(FetchUrl.split("/")[0:3])+"/post/"+FetchUrl.split("/")[4]
+	i = 0
+	if notesClient['notes'][0]["blog_url"]["type"] == "reblog":
+		page = requests.get(notesClient['notes']["blog_url"])
+	gettheNotes = notesClient['notes']
 	page = requests.get(gettheNotes)
 	soup = BeautifulSoup(page.text)
-	notesStr = soup.find("div", "info").findAll("a")[1].contents[0].split(" ")[0].replace(',',"")
-	toDo = int(notesStr)-1
 
 	print "\n Scrapping pages to get the notes.  -- Fuck The API"
 	lp.release()
