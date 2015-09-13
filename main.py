@@ -6,9 +6,10 @@ from multiprocessing import Process, Lock, Queue, Value
 from multiprocessing.queues import SimpleQueue
 import sys, time
 import operator
+import math
 
 ANALYSIS = True
-REGENERATE = True
+REGENERATE = False
 LOGGING = True
 VISUALIZATION = True
 EVALUATE_CENTRALITY = True
@@ -16,36 +17,53 @@ SourceURL = "http://breadstyx.tumblr.com/notes/128187440953/rvY4jeyS6"
 
 dumpfile = "score_dump"
 
-def scrapping(FetchUrl, q, l):
+def scrapping(FetchUrl, p, q, l, lp):
 	url = ""
 	notes=[]
 	reblogs = 0
 	noteCount = 0
 
+	print p, q, l, lp
+
+	lp.acquire()
+	gettheNotes = "/".join(FetchUrl.split("/")[0:3])+"/post/"+FetchUrl.split("/")[4]
+	page = requests.get(gettheNotes)
+	soup = BeautifulSoup(page.text)
+	notesStr = soup.find("div", "info").findAll("a")[1].contents[0].split(" ")[0].replace(',',"")
+	toDo = int(notesStr)-1
+
 	print "\n Scrapping pages to get the notes.  -- Fuck The API"
+	lp.release()
 	while(True):
 		page = requests.get(FetchUrl+url)
 		soup = BeautifulSoup(page.text)
 		for l in soup.findAll("li"):
 			noteCount += 1
+			p.value = (noteCount*1.0/toDo*1.0)*100.0
 			if(len(l.findAll("a"))>2):
 				reblogs+=1
-				#print(l.findAll("a")[1].contents[0]+" from "+l.findAll("a")[2].contents[0]+": Added !")
 				notes+=[[str(l.findAll("a")[1].contents[0]), str(l.findAll("a")[2].contents[0])]]
 		if "original_post" in l['class']:
-			print("\r\t\t\t\t\t\t\t\t\r\t\t\r\t"+str(reblogs)+" reblogs added to list !\n")
-			print("\r\t\t\t\t\t\t\t\t\r\t\t\r\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs.\n")
+			lp.acquire()
+			flush()
+			print "\t"+str(reblogs)+" reblogs added to list !\n"
+			flush()
+			print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs.\n"
+			lp.release()
 			break
 		try:
 			urlbis=url
 			url="?"+str(soup.findAll("a", attrs={"class":"more_notes_link"})[0].contents[3]).split('GET\',')[1].split(',true')[0][1:-1].split("?")[1]
 		except IndexError:
+			lp.acquire()
 			print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
+			lp.release()
 			break
 	
 	q.put_nowait(list(set([n[0] for n in notes])))
 	q.put_nowait(notes)
 	q.put_nowait(noteCount)
+	return
 
 
 def flush():
@@ -65,33 +83,66 @@ def loadingtime(lock, perc=None):
 		lock.release()
 		j+=1
 
-def calcCentrality(G, ret, l, l2):
+def calcCentrality(G, p, ret, l, l2):
 	l.acquire(True)
-	print "\r Detail of calculations: "
-	yo = networkx.betweenness_centrality(G)
-	l2.acquire(True)
-	print "\r\t\t\t\t\t\t\t\t \r\t - Calculation of Betweenness done."
-	ret.put_nowait(yo)
-	l2.release()
+	flush()
+	print " Detail of calculations:"
 	ya = networkx.closeness_centrality(G)
 	l2.acquire(True)
-	print "\r\t\t\t\t\t\t\t\t \r\t - Calculation of Closeness done."
+	flush()
+	print "\t - Calculation of Closeness done."
+	p.value = 25.0
+	l2.release()
+	yo = networkx.betweenness_centrality(G)
+	l2.acquire(True)
+	flush()
+	print "\t - Calculation of Betweenness done."
+	p.value = 50.0
+	ret.put_nowait(yo)
 	ret.put_nowait(ya)
 	l2.release()
 	yi = networkx.degree_centrality(G)
 	l2.acquire(True)
-	print "\r\t\t\t\t\t\t\t\t \r\t - Calculation of Degree done."
+	flush()
+	print "\t - Calculation of Degree done."
+	p.value = 75.0
 	ret.put_nowait(yi)
 	l2.release()
 	yu = networkx.load_centrality(G)
 	l2.acquire(True)
-	print "\r\t\t\t\t\t\t\t\t \r\t - Calculation of Load done."
+	flush()
+	print "\t - Calculation of Load done."
 	ret.put_nowait(yu)
 	l2.release()
 	ret.put('STOP')
 	l.release()
 	ret.close()
 	return
+
+def fragperc(G, p):
+	pS = 0
+	while(p.value < 25.0):
+		for p2 in range(len(G.edges())):
+			p.value = float(p2)/len(G.nodes())*25.0
+			time.sleep(0.05)
+			pS = p2
+	while(p.value < 50.0):
+		for p1 in range(len(G.edges())):
+			p.value = float(p1)/(len(G.edges()))*900
+			time.sleep(0.05)
+			pS = p1
+	while(p.value < 75.0):
+		for p3 in range(len(G.degree_iter())):
+			p.value = float(p3) / float(len(G.degree_iter())) * 25.0 + 50.0
+			time.sleep(0.05)
+			pS = p1
+	while(p.value > 75.0):
+		for p4 in range(len(G.nodes())*len(G.edges())):
+			p.value = float(p4) / float(len(G.nodes())*len(G.edges())) * 25.0 + 75.0
+			time.sleep(0.05)
+	return
+
+
 
 def new_db(src, data, q, l, p):
 	db = {}
@@ -109,25 +160,26 @@ def new_db(src, data, q, l, p):
 	q.put(db)
 	q.close()
 	l.release()
+	return
 
 if __name__=='__main__':
 
-	global Score, central
 	results = Queue()
 	lock = Lock()
 	lockPrint = Lock()
 	dummy = Lock()
+	progress = Value('d', 0.0)
 
 	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v0.5 *--  "
 
 	if(REGENERATE):
 
 		if False:
-			p1 = Process(target = loadingtime, args=[lockPrint])
-			p1.start()
-			p2 = Process(target = scrapping, args=(SourceURL, results, lock))
+			p1 = Process(target = loadingtime, args=(lockPrint, progress))
+			p2 = Process(target = scrapping, args=(SourceURL, progress, results, lock, lockPrint))
 			p2.start()
-			time.sleep(10)
+			time.sleep(0.2)
+			p1.start()
 			lock.acquire(True)
 			users = results.get()
 			notes = results.get()
@@ -157,7 +209,7 @@ if __name__=='__main__':
 
 		print " Reformatting data so it can be easily converted to Graph later."
 
-		progress = Value('d', 0.0)
+		progress.value = 0.0
 		p1 = Process(target = loadingtime, args=(dummy, progress))
 		p1.start()
 		p2 = Process(target = new_db, args=(users, notes, results, lock, progress))
@@ -213,27 +265,26 @@ if __name__=='__main__':
 		filedump = open(dumpfile, 'r')
 		(Score, noteCount) = pickle.load(filedump)
 		filedump.close()
-		print str(len(Score.edges())), noteCount 
 		central = []
 
 		print "\n Starting calculation of centrality."
 
 		if(EVALUATE_CENTRALITY):
-			results = Queue()
-			lock = Lock()
-			lockPrint = Lock()
 
-			p1 = Process(target = loadingtime, args=[lockPrint])
+			progress.value = 0.0
+			p1 = Process(target = loadingtime, args=(lockPrint, progress))
 			p1.start()
-			p2 = Process(target = calcCentrality, args=(Score, results, lock, lockPrint))
+			p2 = Process(target = calcCentrality, args=(Score, progress, results, lock, lockPrint))
 			p2.start()
-			time.sleep(10)
+			p3 = Process(target = fragperc, args=(Score, progress))
+			p3.start()
 			lock.acquire(True)
 			for i in iter(results.get, 'STOP'):
 				central.append(i)
 			time.sleep(.1)
 			lock.release()
 			p1.terminate()
+			p3.terminate()
 			dumpfile = open("centrality_dump", 'w')
 			pickle.dump(central, dumpfile)
 			dumpfile.close()
@@ -242,7 +293,8 @@ if __name__=='__main__':
 			central = pickle.load(dumpfile)
 			dumpfile.close()
 
-		print "\r\t\t\t\t\t\t\t\t\r\tCentrality values calculated!"
+		flush()
+		print "\tCentrality values calculated!"
 
 		print "\n Using centrality to establish who had the most influence on the notes.\n"
 		winners = [[i for i in sorted(central[2], key=lambda x: central[2][x])][-10:] for j in range (4)]
