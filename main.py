@@ -1,5 +1,5 @@
 import requests
-from BeautifulSoup import BeautifulSoup
+from bs4 import BeautifulSoup
 import pickle
 import networkx
 from multiprocessing import Process, Lock, Queue, Value
@@ -18,7 +18,7 @@ notesClient = client.posts('breadstyx.tumblr.com', id=128187440953, notes_info=T
 toDo = notesClient['note_count']
 
 ANALYSIS = True
-REGENERATE = False
+REGENERATE = True
 LOGGING = True
 VISUALIZATION = True
 EVALUATE_CENTRALITY = True
@@ -30,19 +30,15 @@ i = 0
 while True:
 	while notesClient['notes'][i]["type"] != "reblog":
 		i += 1
-	page = requests.get(notesClient['notes'][i]["blog_url"]+"posts/"+notesClient['notes'][i]["post_id"])
-	print notesClient['notes'][i]["blog_url"]+"post/"+notesClient['notes'][i]["post_id"]
-	soup = BeautifulSoup(page.text, convertEntities=BeautifulSoup.HTML_ENTITIES)
-	if notesClient['notes'][i]["blog_url"].find("thatbamfsidekick") != -1 :
-		#for x in soup.findAll("body"):    # will give you all a tag
-		print soup.findAll("a")
-	i += 1
+	page = requests.get(notesClient['notes'][i]["blog_url"]+"post/"+notesClient['notes'][i]["post_id"])
+	soup = BeautifulSoup(page.text, 'html.parser')
 	if len(soup.findAll("a", "more_notes_link")) != 0:
 		break
+	i += 1
+addendum_url = soup.findAll("a", "more_notes_link")[0]["onclick"].split('GET\',\'/')[1].split('?from')[0]
+FetchURL = notesClient['notes'][i]["blog_url"]+addendum_url
 
 dumpfile = "score_dump"
-
-exit()
 
 def scrapping(FetchUrl, p, q, l, lp):
 	url = ""
@@ -50,24 +46,17 @@ def scrapping(FetchUrl, p, q, l, lp):
 	reblogs = 0
 	noteCount = 0
 
-	print p, q, l, lp
-
 	lp.acquire()
-	i = 0
-	if notesClient['notes'][0]["blog_url"]["type"] == "reblog":
-		page = requests.get(notesClient['notes']["blog_url"])
-	gettheNotes = notesClient['notes']
-	page = requests.get(gettheNotes)
-	soup = BeautifulSoup(page.text)
-
 	print "\n Scrapping pages to get the notes.  -- Fuck The API"
 	lp.release()
 	while(True):
 		page = requests.get(FetchUrl+url)
-		soup = BeautifulSoup(page.text)
+		soup = BeautifulSoup(page.text, 'html.parser')
 		for l in soup.findAll("li"):
 			noteCount += 1
 			p.value = (noteCount*1.0/toDo*1.0)*100.0
+			if p.value >= 100.0:
+				print url, urlbis, (url==urlbis)
 			if(len(l.findAll("a"))>2):
 				reblogs+=1
 				notes+=[[str(l.findAll("a")[1].contents[0]), str(l.findAll("a")[2].contents[0])]]
@@ -81,7 +70,9 @@ def scrapping(FetchUrl, p, q, l, lp):
 			break
 		try:
 			urlbis=url
-			url="?"+str(soup.findAll("a", attrs={"class":"more_notes_link"})[0].contents[3]).split('GET\',')[1].split(',true')[0][1:-1].split("?")[1]
+			url="?"+str(soup.findAll("a", "more_notes_link")[0]["onclick"].split("GET\',")[1].split(',true')[0][1:-1])
+			if url == urlbis:
+				"Woops"
 		except IndexError:
 			lp.acquire()
 			print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
@@ -202,7 +193,7 @@ if __name__=='__main__':
 
 	if(REGENERATE):
 
-		if False:
+		if True:
 			p1 = Process(target = loadingtime, args=(lockPrint, progress))
 			p2 = Process(target = scrapping, args=(SourceURL, progress, results, lock, lockPrint))
 			p2.start()
