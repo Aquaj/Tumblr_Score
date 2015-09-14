@@ -12,16 +12,17 @@ def countSteps(p):
 
 def degree(G):
 	d = 0.0
-	for n in G.degree(G.nodes()):
-		d += n
+	for n in len(G.nodes()):
+		d += G.degree(G.nodes()[n])
 	return d/len(G.nodes())
 
 if __name__ == "__main__":
 	Score = networkx.MultiDiGraph()
-	for i in range(1,2500):
-		e = (i%2, i%3)
+	for i in range(1,5000):
+		e = (i, i+1)
 		if e not in Score.edges():
 			Score.add_edges_from([e])
+	# print Score.edges()
 
 	V = len(Score.nodes())
 	E = len(Score.edges())
