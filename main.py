@@ -13,50 +13,52 @@ import pytumblr
 #     '9eiFTlrSFD6XkaKN7lvUmMUdFYiPGkP1a9rxPbQtpKCDXwuuJq',
 #     'WJQ1EbBC52fXV19zsgLd0GMoxlEfC0O8vYLjNAPcwhEa97MMFa'
 # )
+
 client = pytumblr.TumblrRestClient('uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu')
-notesClient = client.posts('breadstyx.tumblr.com', id=128187440953, notes_info=True)['posts'][0]
-toDo = notesClient['note_count']
 
 ANALYSIS = True
 REGENERATE = True
 LOGGING = True
 VISUALIZATION = True
 EVALUATE_CENTRALITY = True
-postID = 128187440953
-blogSource = "breadstyx"
-SourceURL = "http://"+str(blogSource)+".tumblr.com/notes/"+str(postID)+"/rvY4jeyS6"
 
-i = 0
-while True:
-	while notesClient['notes'][i]["type"] != "reblog":
-		i += 1
-	page = requests.get(notesClient['notes'][i]["blog_url"]+"post/"+notesClient['notes'][i]["post_id"])
-	soup = BeautifulSoup(page.text, 'html.parser')
-	if len(soup.findAll("a", "more_notes_link")) != 0:
-		break
-	i += 1
-addendum_url = soup.findAll("a", "more_notes_link")[0]["onclick"].split('GET\',\'/')[1].split('?from')[0]
-FetchURL = notesClient['notes'][i]["blog_url"]+addendum_url
+id_post = sys.argv[1]
+sourceBlog = sys.argv[2]
 
 dumpfile = "score_dump"
 
-def scrapping(FetchUrl, p, q, l, lp):
+def scrapping(cli, postID, blogSource, p, q, l, lp):
 	url = ""
+	urlbis = "" 
 	notes=[]
 	reblogs = 0
 	noteCount = 0
 
+	notesClient = cli.posts(blogSource+'.tumblr.com', id=postID, notes_info=True)['posts'][0]
+	toDo = notesClient['note_count']
+
+	i = 0
+	while True:
+		while notesClient['notes'][i]["type"] != "reblog":
+			i += 1
+		page = requests.get(notesClient['notes'][i]["blog_url"]+"post/"+notesClient['notes'][i]["post_id"])
+		soup = BeautifulSoup(page.text, 'html.parser')
+		if len(soup.findAll("a", "more_notes_link")) != 0:
+			break
+		i += 1
+	addendum_url = soup.findAll("a", "more_notes_link")[0]["onclick"].split('GET\',\'/')[1].split('?from')[0]
+	theURL = notesClient['notes'][i]["blog_url"]+addendum_url
+
 	lp.acquire()
+	flush()
 	print "\n Scrapping pages to get the notes.  -- Fuck The API"
 	lp.release()
 	while(True):
-		page = requests.get(FetchUrl+url)
+		page = requests.get(theURL+url)
 		soup = BeautifulSoup(page.text, 'html.parser')
 		for l in soup.findAll("li"):
 			noteCount += 1
 			p.value = (noteCount*1.0/toDo*1.0)*100.0
-			if p.value >= 100.0:
-				print url, urlbis, (url==urlbis)
 			if(len(l.findAll("a"))>2):
 				reblogs+=1
 				notes+=[[str(l.findAll("a")[1].contents[0]), str(l.findAll("a")[2].contents[0])]]
@@ -70,9 +72,9 @@ def scrapping(FetchUrl, p, q, l, lp):
 			break
 		try:
 			urlbis=url
-			url="?"+str(soup.findAll("a", "more_notes_link")[0]["onclick"].split("GET\',")[1].split(',true')[0][1:-1])
+			url="?"+str(soup.findAll("a", "more_notes_link")[0]["onclick"].split("?")[1].split(',true')[0][:-1])
 			if url == urlbis:
-				"Woops"
+				print "Woops"
 		except IndexError:
 			lp.acquire()
 			print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
@@ -195,7 +197,7 @@ if __name__=='__main__':
 
 		if True:
 			p1 = Process(target = loadingtime, args=(lockPrint, progress))
-			p2 = Process(target = scrapping, args=(SourceURL, progress, results, lock, lockPrint))
+			p2 = Process(target = scrapping, args=(client, id_post, sourceBlog, progress, results, lock, lockPrint))
 			p2.start()
 			time.sleep(0.2)
 			p1.start()
