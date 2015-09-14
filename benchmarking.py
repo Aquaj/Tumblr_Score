@@ -1,9 +1,13 @@
 import networkx
-from multiprocessing import Process, Lock, Queue
-from multiprocessing.queues import SimpleQueue
 import time
 
 values = [(500, 500), (250, 500), (500, 250), (1000, 500), (1500, 1500), (5000, 5000)]
+
+def writedata(values):
+	output = ""
+	for v in values:
+		output += "".join([" " for tab in range(8-len(str(v)))])+str(v)
+	return output
 
 def degree(G):
 	d = 0.0
