@@ -16,14 +16,16 @@ import pytumblr
 
 client = pytumblr.TumblrRestClient('uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu')
 
+class Joss(Exception): pass
+
 ANALYSIS = True
-REGENERATE = True
+REGENERATE = False
 LOGGING = True
 VISUALIZATION = True
 EVALUATE_CENTRALITY = True
 
-id_post = sys.argv[1]
-sourceBlog = sys.argv[2]
+id_post = sys.argv[1] if len(sys.argv)>1 else 128187440953
+sourceBlog = sys.argv[2] if len(sys.argv)>2 else "breadstyx"
 
 dumpfile = "score_dump"
 
@@ -53,33 +55,37 @@ def scrapping(cli, postID, blogSource, p, q, l, lp):
 	flush()
 	print "\n Scrapping pages to get the notes.  -- Fuck The API"
 	lp.release()
-	while(True):
-		page = requests.get(theURL+url)
-		soup = BeautifulSoup(page.text, 'html.parser')
-		for l in soup.findAll("li"):
-			noteCount += 1
-			p.value = (noteCount*1.0/toDo*1.0)*100.0
-			if(len(l.findAll("a"))>2):
-				reblogs+=1
-				notes+=[[str(l.findAll("a")[1].contents[0]), str(l.findAll("a")[2].contents[0])]]
-		if "original_post" in l['class']:
+	try:
+		while(True):
+			page = requests.get(theURL+url)
+			soup = BeautifulSoup(page.text, 'html.parser')
+			for l in soup.findAll("li"):
+				noteCount += 1
+				p.value = (noteCount*1.0/toDo*1.0)*100.0
+				if("reblog" in l['class']):
+					if "original_post" not in l['class']:
+						reblogs+=1
+						try:
+							notes+=[[str(l.findAll("a", "tumblelog")[0].contents[0]), str(l.findAll("a", "source_tumblelog")[0].contents[0])]]
+						except:
+							print l['class']
+					else:
+						raise Joss
+			try:
+				urlbis=url
+				url="?"+str(soup.findAll("a", "more_notes_link")[0]["onclick"].split("?")[1].split(',true')[0][:-1])
+			except IndexError:
+				lp.acquire()
+				print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
+				lp.release()
+				raise Joss
+	except Joss:
 			lp.acquire()
 			flush()
 			print "\t"+str(reblogs)+" reblogs added to list !\n"
 			flush()
 			print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs.\n"
 			lp.release()
-			break
-		try:
-			urlbis=url
-			url="?"+str(soup.findAll("a", "more_notes_link")[0]["onclick"].split("?")[1].split(',true')[0][:-1])
-			if url == urlbis:
-				print "Woops"
-		except IndexError:
-			lp.acquire()
-			print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
-			lp.release()
-			break
 	
 	q.put_nowait(list(set([n[0] for n in notes])))
 	q.put_nowait(notes)
@@ -112,13 +118,12 @@ def calcCentrality(G, p, ret, l, l2):
 	l2.acquire(True)
 	flush()
 	print "\t - Calculation of Closeness done."
-	p.value = 25.0
+	p.value = 1.0
 	l2.release()
 	yo = networkx.betweenness_centrality(G)
 	l2.acquire(True)
 	flush()
 	print "\t - Calculation of Betweenness done."
-	p.value = 50.0
 	ret.put_nowait(yo)
 	ret.put_nowait(ya)
 	l2.release()
@@ -126,7 +131,6 @@ def calcCentrality(G, p, ret, l, l2):
 	l2.acquire(True)
 	flush()
 	print "\t - Calculation of Degree done."
-	p.value = 75.0
 	ret.put_nowait(yi)
 	l2.release()
 	yu = networkx.load_centrality(G)
@@ -142,25 +146,13 @@ def calcCentrality(G, p, ret, l, l2):
 
 def fragperc(G, p):
 	pS = 0
-	while(p.value < 25.0):
-		for p2 in range(len(G.edges())):
-			p.value = float(p2)/len(G.nodes())*25.0
-			time.sleep(0.05)
-			pS = p2
-	while(p.value < 50.0):
+	E = float(len(G.edges()))
+	V = float(len(G.nodes()))
+	while(p.value > 0.0):
 		for p1 in range(len(G.edges())):
-			p.value = float(p1)/(len(G.edges()))*900
+			p.value = float(p1)
 			time.sleep(0.05)
 			pS = p1
-	while(p.value < 75.0):
-		for p3 in range(len(G.degree_iter())):
-			p.value = float(p3) / float(len(G.degree_iter())) * 25.0 + 50.0
-			time.sleep(0.05)
-			pS = p1
-	while(p.value > 75.0):
-		for p4 in range(len(G.nodes())*len(G.edges())):
-			p.value = float(p4) / float(len(G.nodes())*len(G.edges())) * 25.0 + 75.0
-			time.sleep(0.05)
 	return
 
 
