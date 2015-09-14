@@ -12,8 +12,8 @@ def countSteps(p):
 
 def degree(G):
 	d = 0.0
-	for n in len(G.nodes()):
-		d += G.degree(G.nodes()[n])
+	for n in G.nodes():
+		d += G.degree(n)
 	return d/len(G.nodes())
 
 if __name__ == "__main__":
