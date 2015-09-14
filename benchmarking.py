@@ -19,7 +19,7 @@ def degree(G):
 if __name__ == "__main__":
 	Score = networkx.MultiDiGraph()
 	for i in range(1,5000):
-		e = (i, i+1)
+		e = (i, i//2)
 		if e not in Score.edges():
 			Score.add_edges_from([e])
 	# print Score.edges()
@@ -36,6 +36,11 @@ if __name__ == "__main__":
 	p1.terminate()
 	print "Done."
 
+	eset = []
+	for e in Score.edges():
+		eset += e[2]
+	eset = set(eset)
+
 	data = open("banchmark_data", 'a')
-	data.write(str(V)+"\t"+str(E)+"\t"+str(D)+"\t"+str(time.value)+"\n")
+	data.write(str(V)+"\t"+str(E)+"\t"+str(D)+"\t"+str(len(eset))+"\t"+str(time.value)+"\n")
 	data.close()
