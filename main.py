@@ -192,7 +192,7 @@ if __name__=='__main__':
 	dummy = Lock()
 	progress = Value('d', 0.0)
 
-	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v0.5.2 *--  "
+	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v0.5.5 *--  "
 
 	if(REGENERATE):
 
