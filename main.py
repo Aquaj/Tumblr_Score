@@ -18,7 +18,7 @@ client = pytumblr.TumblrRestClient('uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJe
 class Joss(Exception): pass
 
 ANALYSIS = True
-REGENERATE = False
+REGENERATE = True
 LOGGING = True
 VISUALIZATION = True
 EVALUATE_CENTRALITY = True
@@ -270,6 +270,10 @@ if __name__=='__main__':
 
 		if(EVALUATE_CENTRALITY):
 
+<<<<<<< HEAD
+=======
+			progress.value = 0.0
+>>>>>>> master
 			p1 = Process(target = loadingtime, args=[lockPrint])
 			p1.start()
 			p2 = Process(target = calcCentrality, args=(Score, results, lock, lockPrint))
