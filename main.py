@@ -20,6 +20,7 @@ class Joss(Exception): pass
 ANALYSIS = True
 REGENERATE = True
 LOGGING = True
+GRAPH_GEN = True
 VISUALIZATION = True
 EVALUATE_CENTRALITY = True
 
@@ -32,62 +33,84 @@ def scrapping(cli, postID, blogSource, p, q, l, lp):
 	url = ""
 	urlbis = "" 
 	notes=[]
+	replies=[]
 	reblogs = 0
 	noteCount = 0
 
 	notesClient = cli.posts(blogSource+'.tumblr.com', id=postID, notes_info=True)['posts'][0]
 	toDo = notesClient['note_count']
-
-	i = 0
-	while True:
-		while notesClient['notes'][i]["type"] != "reblog":
-			i += 1
-		page = requests.get(notesClient['notes'][i]["blog_url"]+"post/"+notesClient['notes'][i]["post_id"])
-		soup = BeautifulSoup(page.text, 'html.parser')
-		if len(soup.findAll("a", "more_notes_link")) != 0:
-			break
-		i += 1
-	addendum_url = soup.findAll("a", "more_notes_link")[0]["onclick"].split('GET\',\'/')[1].split('?from')[0]
-	theURL = notesClient['notes'][i]["blog_url"]+addendum_url
-
-	lp.acquire()
-	flush()
-	print "\n Scrapping pages to get the notes.  -- Fuck The API"
-	lp.release()
 	try:
-		while(True):
-			page = requests.get(theURL+url)
-			soup = BeautifulSoup(page.text, 'html.parser')
-			for l in soup.findAll("li"):
-				noteCount += 1
-				p.value = (noteCount*1.0/toDo*1.0)*100.0
-				if("reblog" in l['class']):
-					if "original_post" not in l['class']:
-						reblogs+=1
-						try:
-							notes+=[[str(l.findAll("a", "tumblelog")[0].contents[0]), str(l.findAll("a", "source_tumblelog")[0].contents[0])]]
-						except:
-							print l['class']
-					else:
-						raise Joss
-			try:
-				urlbis=url
-				url="?"+str(soup.findAll("a", "more_notes_link")[0]["onclick"].split("?")[1].split(',true')[0][:-1])
-			except IndexError:
-				lp.acquire()
-				print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
-				lp.release()
-				raise Joss
-	except Joss:
+		if len(notesClient['notes'])==50:
+			i = 0
+			while True:
+				while notesClient['notes'][i]["type"] != "reblog":
+					i += 1
+				page = requests.get(notesClient['notes'][i]["blog_url"]+"post/"+notesClient['notes'][i]["post_id"])
+				soup = BeautifulSoup(page.text, 'html.parser')
+				if len(soup.findAll("a", "more_notes_link")) != 0:
+					break
+				i += 1
+			addendum_url = soup.findAll("a", "more_notes_link")[0]["onclick"].split('GET\',\'/')[1].split('?from')[0]
+			theURL = notesClient['notes'][i]["blog_url"]+addendum_url
+
 			lp.acquire()
 			flush()
-			print "\t"+str(reblogs)+" reblogs added to list !\n"
-			flush()
-			print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs.\n"
+			print "\n Scrapping pages to get the notes.  -- Fuck The API"
 			lp.release()
-	
+			while(True):
+				page = requests.get(theURL+url)
+				soup = BeautifulSoup(page.text, 'html.parser')
+				for l in soup.findAll("li"):
+					noteCount += 1
+					p.value = ((noteCount-1)*1.0/toDo*1.0)*100.0
+					if "original_post" not in l['class']:
+						if("reblog" in l['class']):
+							reblogs+=1
+							notes+=[[str(l.findAll("a", "tumblelog")[0].contents[0]), str(l.findAll("a", "source_tumblelog")[0].contents[0])]]
+						if("reply" in l['class']):
+							replies+=[[str(l.findAll("a")[1].contents[0]), str(l.findAll("span", "answer_content")[0].contents[0].replace(u"\u2018", "'").replace(u"\u2019", "'"))]]
+					else:
+						raise Joss
+				try:
+					urlbis=url
+					url="?"+str(soup.findAll("a", "more_notes_link")[0]["onclick"].split("?")[1].split(',true')[0][:-1])
+				except IndexError:
+					lp.acquire()
+					print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
+					lp.release()
+					raise Joss
+		else:
+			lp.acquire()
+			flush()
+			print "\n Using API to get notes -- That one case where the API isn't useless, wow."
+			print " -- No influence analysis or graph can be provided under 50 notes. --\n"
+			lp.release()
+			while(True):
+				for n in notesClient['notes']:
+					noteCount += 1
+					p.value = (noteCount*1.0/toDo*1.0)*100.0
+					if n['type']!="posted":
+						if n['type']=="reblog":
+							reblogs+=1
+					if n['type']=="reply":
+							replies+=[[n['blog_name'],n['reply_text']]]
+					else:
+						raise Joss
+	except Joss:
+		lp.acquire()
+		flush()
+		print "\t"+str(reblogs)+" reblogs added to list !\n"
+		flush()
+		print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs.\n"
+		print " Replies :"
+		for r in replies:
+			print " - "+str(r[0])+" said: "+str(r[1])
+		print "\n",
+		lp.release()
+
 	q.put_nowait(list(set([n[0] for n in notes])))
 	q.put_nowait(notes)
+	q.put_nowait(replies)
 	q.put_nowait(noteCount)
 	return
 
@@ -99,15 +122,15 @@ def loadingtime(lock, perc=None):
 	j = 0
 	while True:
 		time.sleep(0.5)
-		lock.acquire(True)
-		flush()
-		sys.stdout.write("\r\t\tLoading"+ ("".join(["." for counter in range(j%4)]) if (perc == None) else (" "+str(int(perc.value))+"% " + \
+		if lock.acquire():
+			flush()
+			sys.stdout.write("\r\t\tLoading"+ ("".join(["." for counter in range(j%4)]) if (perc == None) else (" "+str(int(perc.value))+"% " + \
 																																			("/" if (j%4 == 0) else \
 																																			("-" if (j%4 == 1) else \
 																																			("\\" if (j%4 == 2) else \
 																																			("|")))))))
-		lock.release()
-		j+=1
+			lock.release()
+			j+=1
 
 def calcCentrality(G, ret, l, l2):
 	l.acquire(True)
@@ -118,25 +141,25 @@ def calcCentrality(G, ret, l, l2):
 	flush()
 	print "\t - Calculation of Closeness done."
 	l2.release()
+	ret.put_nowait(ya)
 	yo = networkx.betweenness_centrality(G)
 	l2.acquire(True)
 	flush()
 	print "\t - Calculation of Betweenness done."
-	ret.put_nowait(yo)
-	ret.put_nowait(ya)
 	l2.release()
+	ret.put_nowait(yo)
 	yi = networkx.degree_centrality(G)
 	l2.acquire(True)
 	flush()
 	print "\t - Calculation of Degree done."
-	ret.put_nowait(yi)
 	l2.release()
+	ret.put_nowait(yi)
 	yu = networkx.load_centrality(G)
 	l2.acquire(True)
 	flush()
 	print "\t - Calculation of Load done."
-	ret.put_nowait(yu)
 	l2.release()
+	ret.put_nowait(yu)
 	ret.put('STOP')
 	l.release()
 	ret.close()
@@ -169,7 +192,7 @@ if __name__=='__main__':
 	dummy = Lock()
 	progress = Value('d', 0.0)
 
-	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v0.5 *--  "
+	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v0.5.2 *--  "
 
 	if(REGENERATE):
 
@@ -182,6 +205,7 @@ if __name__=='__main__':
 			lock.acquire(True)
 			users = results.get()
 			notes = results.get()
+			replies = results.get()
 			noteCount = results.get()
 			time.sleep(.1)
 			lock.release()
@@ -195,32 +219,53 @@ if __name__=='__main__':
 			a = pickle.load(d)
 			users = a[0]
 			notes = a[1]
-			noteCount = a[2]
+			replies = a[2]
+			noteCount = a[3]
 			d.close()
 
+		activate = (len(client.posts(sourceBlog+'.tumblr.com', id=id_post, notes_info=True)['posts'][0]['notes'])>=50)
 
-		if(LOGGING):
+		GRAPH_GEN = GRAPH_GEN and activate
+		VISUALIZATION = VISUALIZATION and activate
+		ANALYSIS = ANALYSIS and activate
+		EVALUATE_CENTRALITY = EVALUATE_CENTRALITY and activate
+		LOGGING = LOGGING and activate
+
+		if LOGGING:
 			flush()
 			print " LOG - Writing a log in readable_note_dump"
 			dump = open("readable_note_dump", 'w')
 			for n in notes:
 				dump.write(" reblogged from : ".join(n)+"\n")
 
-		print " Reformatting data so it can be easily converted to Graph later."
+		if GRAPH_GEN:
+			print " Reformatting data so it can be easily converted to Graph later."
 
-		progress.value = 0.0
-		p1 = Process(target = loadingtime, args=(dummy, progress))
-		p1.start()
-		p2 = Process(target = new_db, args=(users, notes, results, lock, progress))
-		p2.start()
-		time.sleep(10)
-		lock.acquire(True)
-		database = results.get()
-		time.sleep(.1)
-		lock.release()
-		p1.terminate()
-		flush()
-		print("\tData formatted!")
+			progress.value = 0.0
+			p1 = Process(target = loadingtime, args=(dummy, progress))
+			p2 = Process(target = new_db, args=(users, notes, results, lock, progress))
+			p2.start()
+			p1.start()
+			time.sleep(5)
+			lock.acquire(True)
+			database = results.get()
+			time.sleep(.1)
+			lock.release()
+			p1.terminate()
+			flush()
+			print("\tData formatted!")
+
+			Score = networkx.MultiDiGraph()
+			Score.add_nodes_from(database.iterkeys())
+			print " Creating Score Graph using NetworkX."
+			for source in database.iterkeys():
+				for target in database[source]:
+					Score.add_edge(source, target)
+
+			print " Pickling Score in "+dumpfile+" to save time on next uses."
+			filedump = open(dumpfile, 'w')
+			pickle.dump([Score, noteCount], filedump)
+			filedump.close()
 
 
 		if(LOGGING):
@@ -232,15 +277,7 @@ if __name__=='__main__':
 				else:
 					dump.write(user + " doesn't have any fRIENDS AND AS SUCH DOESNT HELP PROPAGATE MY POST.\n")
 
-
-		Score = networkx.MultiDiGraph()
-		Score.add_nodes_from(database.iterkeys())
-		print " Creating Score Graph using NetworkX."
-		for source in database.iterkeys():
-			for target in database[source]:
-				Score.add_edge(source, target)
-
-		if(VISUALIZATION):
+		if VISUALIZATION:
 			print " Writing a GML file for Gephi visualization."
 			graphFile = open("score.gml", 'w')
 			graphFile.write("graph\n[\n")
@@ -252,11 +289,6 @@ if __name__=='__main__':
 					graphFile.write("  edge\n  [\n   source "+node+"\n   target "+edgeEnd+"\n  ]\n")
 			print "\t - Edges written !\n"
 			graphFile.write("]")
-
-		print " Pickling Score in "+dumpfile+" to save time on next uses."
-		filedump = open(dumpfile, 'w')
-		pickle.dump([Score, noteCount], filedump)
-		filedump.close()
 
 	if ANALYSIS:
 
@@ -270,11 +302,11 @@ if __name__=='__main__':
 
 		if(EVALUATE_CENTRALITY):
 
-			progress.value = 0.0
 			p1 = Process(target = loadingtime, args=[lockPrint])
-			p1.start()
 			p2 = Process(target = calcCentrality, args=(Score, results, lock, lockPrint))
 			p2.start()
+			time.sleep(5)
+			p1.start()
 			lock.acquire(True)
 			for i in iter(results.get, 'STOP'):
 				central.append(i)
