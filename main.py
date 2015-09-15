@@ -99,15 +99,15 @@ def loadingtime(lock, perc=None):
 	j = 0
 	while True:
 		time.sleep(0.5)
-		lock.acquire(True)
-		flush()
-		sys.stdout.write("\r\t\tLoading"+ ("".join(["." for counter in range(j%4)]) if (perc == None) else (" "+str(int(perc.value))+"% " + \
+		if lock.acquire():
+			flush()
+			sys.stdout.write("\r\t\tLoading"+ ("".join(["." for counter in range(j%4)]) if (perc == None) else (" "+str(int(perc.value))+"% " + \
 																																			("/" if (j%4 == 0) else \
 																																			("-" if (j%4 == 1) else \
 																																			("\\" if (j%4 == 2) else \
 																																			("|")))))))
-		lock.release()
-		j+=1
+			lock.release()
+			j+=1
 
 def calcCentrality(G, ret, l, l2):
 	l.acquire(True)
@@ -118,25 +118,25 @@ def calcCentrality(G, ret, l, l2):
 	flush()
 	print "\t - Calculation of Closeness done."
 	l2.release()
+	ret.put_nowait(ya)
 	yo = networkx.betweenness_centrality(G)
 	l2.acquire(True)
 	flush()
 	print "\t - Calculation of Betweenness done."
-	ret.put_nowait(yo)
-	ret.put_nowait(ya)
 	l2.release()
+	ret.put_nowait(yo)
 	yi = networkx.degree_centrality(G)
 	l2.acquire(True)
 	flush()
 	print "\t - Calculation of Degree done."
-	ret.put_nowait(yi)
 	l2.release()
+	ret.put_nowait(yi)
 	yu = networkx.load_centrality(G)
 	l2.acquire(True)
 	flush()
 	print "\t - Calculation of Load done."
-	ret.put_nowait(yu)
 	l2.release()
+	ret.put_nowait(yu)
 	ret.put('STOP')
 	l.release()
 	ret.close()
@@ -169,7 +169,7 @@ if __name__=='__main__':
 	dummy = Lock()
 	progress = Value('d', 0.0)
 
-	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v0.5 *--  "
+	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v0.5.2 *--  "
 
 	if(REGENERATE):
 
@@ -270,11 +270,11 @@ if __name__=='__main__':
 
 		if(EVALUATE_CENTRALITY):
 
-			progress.value = 0.0
-			p1 = Process(target = loadingtime, args=(lockPrint))
+			p1 = Process(target = loadingtime, args=[lockPrint])
 			p1.start()
 			p2 = Process(target = calcCentrality, args=(Score, results, lock, lockPrint))
 			p2.start()
+			time.sleep(0.5)
 			lock.acquire(True)
 			for i in iter(results.get, 'STOP'):
 				central.append(i)
