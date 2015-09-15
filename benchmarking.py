@@ -1,12 +1,12 @@
 import networkx
 import time
 
-values = [(500, 500), (250, 500), (500, 250), (1000, 500), (1500, 1500), (5000, 5000)]
+values = [(100, 100), (250, 500), (500, 250), (1000, 500), (500, 1000), (1500, 1500), (5000, 5000)]
 
 def writedata(values):
 	output = ""
 	for v in values:
-		output += "".join([" " for tab in range(8-len(str(v)))])+str(v)
+		output += "\t" + str(v)
 	return output
 
 def degree(G):
@@ -22,11 +22,10 @@ if __name__ == "__main__":
 		out = analysisV[1]
 
 		Score = networkx.MultiDiGraph()
-		for i in range(1,5000):
+		for i in range(1,1000):
 			e = (i%inp, i%out)
 			if e not in Score.edges():
 				Score.add_edges_from([e])
-		# print Score.edges()
 
 		iset = set([i for i,o in Score.edges()])
 		iset = set(iset)
@@ -47,6 +46,6 @@ if __name__ == "__main__":
 		T = end - start
 		print "Done."
 
-		data = open("banchmark_data", 'a')
+		data = open("benchmark_data", 'a')
 		data.write(writedata([V,E,D,I,O,T])+"\n")
 		data.close()

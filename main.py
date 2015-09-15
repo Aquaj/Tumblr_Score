@@ -3,7 +3,6 @@ from bs4 import BeautifulSoup
 import pickle
 import networkx
 from multiprocessing import Process, Lock, Queue, Value
-from multiprocessing.queues import SimpleQueue
 import sys, time, re
 import pytumblr
 
@@ -110,7 +109,7 @@ def loadingtime(lock, perc=None):
 		lock.release()
 		j+=1
 
-def calcCentrality(G, p, ret, l, l2):
+def calcCentrality(G, ret, l, l2):
 	l.acquire(True)
 	flush()
 	print " Detail of calculations:"
@@ -118,7 +117,6 @@ def calcCentrality(G, p, ret, l, l2):
 	l2.acquire(True)
 	flush()
 	print "\t - Calculation of Closeness done."
-	p.value = 1.0
 	l2.release()
 	yo = networkx.betweenness_centrality(G)
 	l2.acquire(True)
@@ -143,18 +141,6 @@ def calcCentrality(G, p, ret, l, l2):
 	l.release()
 	ret.close()
 	return
-
-def fragperc(G, p):
-	pS = 0
-	E = float(len(G.edges()))
-	V = float(len(G.nodes()))
-	while(p.value > 0.0):
-		for p1 in range(len(G.edges())):
-			p.value = float(p1)
-			time.sleep(0.05)
-			pS = p1
-	return
-
 
 
 def new_db(src, data, q, l, p):
@@ -285,19 +271,16 @@ if __name__=='__main__':
 		if(EVALUATE_CENTRALITY):
 
 			progress.value = 0.0
-			p1 = Process(target = loadingtime, args=(lockPrint, progress))
+			p1 = Process(target = loadingtime, args=(lockPrint))
 			p1.start()
-			p2 = Process(target = calcCentrality, args=(Score, progress, results, lock, lockPrint))
+			p2 = Process(target = calcCentrality, args=(Score, results, lock, lockPrint))
 			p2.start()
-			p3 = Process(target = fragperc, args=(Score, progress))
-			p3.start()
 			lock.acquire(True)
 			for i in iter(results.get, 'STOP'):
 				central.append(i)
 			time.sleep(.1)
 			lock.release()
 			p1.terminate()
-			p3.terminate()
 			dumpfile = open("centrality_dump", 'w')
 			pickle.dump(central, dumpfile)
 			dumpfile.close()
