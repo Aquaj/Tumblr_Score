@@ -32,60 +32,87 @@ def scrapping(cli, postID, blogSource, p, q, l, lp):
 	url = ""
 	urlbis = "" 
 	notes=[]
+	replies=[]
 	reblogs = 0
 	noteCount = 0
 
 	notesClient = cli.posts(blogSource+'.tumblr.com', id=postID, notes_info=True)['posts'][0]
 	toDo = notesClient['note_count']
 
-	i = 0
-	while True:
-		while notesClient['notes'][i]["type"] != "reblog":
-			i += 1
-		page = requests.get(notesClient['notes'][i]["blog_url"]+"post/"+notesClient['notes'][i]["post_id"])
-		soup = BeautifulSoup(page.text, 'html.parser')
-		if len(soup.findAll("a", "more_notes_link")) != 0:
-			break
-		i += 1
-	addendum_url = soup.findAll("a", "more_notes_link")[0]["onclick"].split('GET\',\'/')[1].split('?from')[0]
-	theURL = notesClient['notes'][i]["blog_url"]+addendum_url
-
-	lp.acquire()
-	flush()
-	print "\n Scrapping pages to get the notes.  -- Fuck The API"
-	lp.release()
-	try:
-		while(True):
-			page = requests.get(theURL+url)
+	if len(notesClient['notes'])>50:
+		i = 0
+		while True:
+			while notesClient['notes'][i]["type"] != "reblog":
+				i += 1
+			page = requests.get(notesClient['notes'][i]["blog_url"]+"post/"+notesClient['notes'][i]["post_id"])
 			soup = BeautifulSoup(page.text, 'html.parser')
-			for l in soup.findAll("li"):
-				noteCount += 1
-				p.value = (noteCount*1.0/toDo*1.0)*100.0
-				if("reblog" in l['class']):
+			if len(soup.findAll("a", "more_notes_link")) != 0:
+				break
+			i += 1
+		addendum_url = soup.findAll("a", "more_notes_link")[0]["onclick"].split('GET\',\'/')[1].split('?from')[0]
+		theURL = notesClient['notes'][i]["blog_url"]+addendum_url
+
+		lp.acquire()
+		flush()
+		print "\n Scrapping pages to get the notes.  -- Fuck The API"
+		lp.release()
+		try:
+			while(True):
+				page = requests.get(theURL+url)
+				soup = BeautifulSoup(page.text, 'html.parser')
+				for l in soup.findAll("li"):
+					noteCount += 1
+					p.value = (noteCount*1.0/toDo*1.0)*100.0
 					if "original_post" not in l['class']:
-						reblogs+=1
-						try:
+						if("reblog" in l['class']):
+							reblogs+=1
 							notes+=[[str(l.findAll("a", "tumblelog")[0].contents[0]), str(l.findAll("a", "source_tumblelog")[0].contents[0])]]
-						except:
-							print l['class']
+						if("reply" in l['class']):
+							notes+=[[str(l.findAll("a", "tumblelog")[0].contents[0]), str(l.findAll("a", "source_tumblelog")[0].contents[0])]]
 					else:
 						raise Joss
-			try:
-				urlbis=url
-				url="?"+str(soup.findAll("a", "more_notes_link")[0]["onclick"].split("?")[1].split(',true')[0][:-1])
-			except IndexError:
+				try:
+					urlbis=url
+					url="?"+str(soup.findAll("a", "more_notes_link")[0]["onclick"].split("?")[1].split(',true')[0][:-1])
+				except IndexError:
+					lp.acquire()
+					print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
+					lp.release()
+					raise Joss
+		except Joss:
 				lp.acquire()
-				print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
+				flush()
+				print "\t"+str(reblogs)+" reblogs added to list !\n"
+				flush()
+				print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs.\n"
 				lp.release()
-				raise Joss
-	except Joss:
-			lp.acquire()
-			flush()
-			print "\t"+str(reblogs)+" reblogs added to list !\n"
-			flush()
-			print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs.\n"
-			lp.release()
-	
+	else:
+		lp.acquire()
+		flush()
+		print "\n Using API to get notes -- That one case where the API isn't useless, wow."
+		lp.release()
+		try:
+			while(True):
+				for n in notesClient['notes']:
+					noteCount += 1
+					p.value = (noteCount*1.0/toDo*1.0)*100.0
+					if n['type']!="posted":
+						if n['type']=="reblog":
+							reblogs+=1
+							#notes+=[[str(l.findAll("a", "tumblelog")[0].contents[0]), str(l.findAll("a", "source_tumblelog")[0].contents[0])]]
+					if n['type']=="reply":
+							replies+=[[str(n['blog_name']+": "+n['reply_text'])]]
+					else:
+						raise Joss
+		except Joss:
+				lp.acquire()
+				flush()
+				print "\t"+str(reblogs)+" reblogs added to list !\n"
+				flush()
+				print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs.\n"
+				print replies
+				lp.release()
+
 	q.put_nowait(list(set([n[0] for n in notes])))
 	q.put_nowait(notes)
 	q.put_nowait(noteCount)
