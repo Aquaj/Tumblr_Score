@@ -270,10 +270,6 @@ if __name__=='__main__':
 
 		if(EVALUATE_CENTRALITY):
 
-<<<<<<< HEAD
-=======
-			progress.value = 0.0
->>>>>>> master
 			p1 = Process(target = loadingtime, args=[lockPrint])
 			p1.start()
 			p2 = Process(target = calcCentrality, args=(Score, results, lock, lockPrint))
