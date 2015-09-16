@@ -1,10 +1,10 @@
-import requests
-from bs4 import BeautifulSoup
-import pickle
-import networkx
-from multiprocessing import Process, Queue, Value, Lock
 import sys, time, re
 import pytumblr
+import requests
+from bs4 import BeautifulSoup
+from multiprocessing import Process, Queue, Value, Lock
+import networkx
+import pickle
 
 # client = pytumblr.TumblrRestClient(
 #     'uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu',
@@ -319,7 +319,7 @@ if __name__=='__main__':
 			p2.start()
 			tags = results.get()
 			p1.terminate()
-			popTags = [(i.encode('utf-8'), tags[i]) for i in reversed(sorted(tags, key=lambda x: tags[x])][-10:])
+			popTags = reversed([(i.encode('utf-8'), tags[i]) for i in sorted(tags, key=lambda x: tags[x])][-10:])
 			print " These tags were the most used on the post :"
 			for tag in popTags:
 				print "\t\""+tag[0]+"\" used "+str(tag[1])+" times."
