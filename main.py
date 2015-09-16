@@ -1,10 +1,16 @@
+import sys, time, re
+import argparse
+import pickle
+
+import pytumblr
+
 import requests
 from bs4 import BeautifulSoup
-import pickle
-import networkx
+
 from multiprocessing import Process, Queue, Value, Lock
-import sys, time, re
-import pytumblr
+
+import networkx
+
 
 # client = pytumblr.TumblrRestClient(
 #     'uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu',
@@ -13,22 +19,37 @@ import pytumblr
 #     'WJQ1EbBC52fXV19zsgLd0GMoxlEfC0O8vYLjNAPcwhEa97MMFa'
 # )
 
+version = "0.9"
+
 client = pytumblr.TumblrRestClient('uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu')
 
 class Joss(Exception): pass
 
-ANALYSIS = True
-REGENERATE = True
-LOGGING = True
-GRAPH_GEN = True
-VISUALIZATION = True
-POPULAR_TAGS = True
-EVALUATE_CENTRALITY = True
+parser = argparse.ArgumentParser(prog="Score v"+version, description="Note Analyzer for tumblr posts. If no arguments are provided, will run on http://breadstyx.tumblr.com/post/128187440953/")
+graphrelated = parser.add_argument_group('graph related')
+parser.add_argument("PostId", type=int, help="the ID of the post you want to analyze. ex: http://breadstyx.tumblr.com/post/<128187440953>/hey-there-fellow", nargs='?', default=128187440953)
+parser.add_argument("sourceBlog", type=str, help="the blog containing the post you want to analyze. ex: http://<breadstyx>.tumblr.com/post/128187440953/hey-there-fellow", nargs='?', default="breadstyx")
+parser.add_argument("-l","--logging", help="will log the notes as a readable file called readable_note_dump", action="store_true")
+graphrelated.add_argument("-v","--visualization", help="will create a GML file of notes so that Gelphi can vizualize the graph of reblogs", action="store_true")
+parser.add_argument("-nr","--no-refresh", help="toggle refreshing of notes off - notes will be read from previous dump : Do Not Use if there is no dump available", action="store_true")
+parser.add_argument("-na","--no-analysis", help="toggle analysis of notes off", action="store_true")
+parser.add_argument("-nt","--no-tags", help="toggle the analysis of user tags off and as such wont display the tags frequently used on the post", action="store_true")
+graphrelated.add_argument("-ni", "--no-influence", help ="toggle the analysis of users' influence on reblogs off and as such won't display the bloggers that had the most influence on the post", action="store_true")
+parser.add_argument("-ng", "--no-graph", help ="toggle off graph generation from notes - caution: graph-related options won't work", action="store_true")
+args = parser.parse_args()
 
-id_post = sys.argv[1] if len(sys.argv)>1 else 128187440953
-sourceBlog = sys.argv[2] if len(sys.argv)>2 else "breadstyx"
+LOGGING = args.logging
+VISUALIZATION = args.visualization
+REGENERATE = not args.no_refresh
+ANALYSIS = not args.no_analysis
+GRAPH_GEN = not args.no_graph
+POPULAR_TAGS = not args.no_tags
+EVALUATE_CENTRALITY = not args.no_influence
 
-dumpfile = "score_dump"
+id_post = args.PostId
+sourceBlog = args.sourceBlog
+
+dumpfile = "score_dump_"+str(id_post)
 
 def scrapping(cli, postID, blogSource, p, q, lp):
 	url = ""
@@ -41,7 +62,7 @@ def scrapping(cli, postID, blogSource, p, q, lp):
 	notesClient = cli.posts(blogSource+'.tumblr.com', id=postID, notes_info=True)['posts'][0]
 	toDo = notesClient['note_count']
 	try:
-		if len(notesClient['notes'])==50:
+		if toDo>50:
 			i = 0
 			while True:
 				while notesClient['notes'][i]["type"] != "reblog":
@@ -93,22 +114,13 @@ def scrapping(cli, postID, blogSource, p, q, lp):
 					if n['type']!="posted":
 						if n['type']=="reblog":
 							reblogs+=1
+							notes += [[""]]
 					if n['type']=="reply":
 							replies+=[[n['blog_name'],n['reply_text']]]
 					else:
 						raise Joss
 	except Joss:
-		lp.acquire()
-		flush()
-		print "\t"+str(reblogs)+" reblogs added to list !\n"
-		flush()
-		print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs. ("+str(reblogs)+"/"+str(noteCount)+")\n"
-		if len(replies)>0:
-			print " Replies :"
-			for r in replies:
-				print " - "+str(r[0])+" said: "+str(r[1])
-			print "\n",
-		lp.release()
+		pass
 
 	q.put_nowait(list(set([n[0] for n in notes])))
 	q.put_nowait(notes)
@@ -210,32 +222,29 @@ if __name__=='__main__':
 	dummy = Lock()
 	progress = Value('d', 0.0)
 
-	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v0.7 *--  "
+	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v"+version+" *--  "
 
 	if(REGENERATE):
 
-		if True:
-			p1 = Process(target = loadingtime, args=(lockPrint, progress))
-			p2 = Process(target = scrapping, args=(client, id_post, sourceBlog, progress, results, lockPrint))
-			p2.start()
-			p1.start()
-			users = results.get()
-			notes = results.get()
-			replies = results.get()
-			noteCount = results.get()
-			p1.terminate()
+		p1 = Process(target = loadingtime, args=(lockPrint, progress))
+		p2 = Process(target = scrapping, args=(client, id_post, sourceBlog, progress, results, lockPrint))
+		p2.start()
+		p1.start()
+		users = results.get()
+		notes = results.get()
+		replies = results.get()
+		noteCount = results.get()
+		p1.terminate()
 
-			d = open("debug", 'w')
-			pickle.dump([users, notes, noteCount], d)
-			d.close()
-		else:
-			d = open("debug", 'r')
-			a = pickle.load(d)
-			users = a[0]
-			notes = a[1]
-			replies = a[2]
-			noteCount = a[3]
-			d.close()
+		flush()
+		print "\t"+str(len(notes))+" reblogs added to list !\n"
+		flush()
+		print "\tNotes composed of "+str(int(len(notes)*1.0/(noteCount*1.0)*100))+"% reblogs. ("+str(len(notes))+"/"+str(noteCount)+")\n"
+		if len(replies)>0:
+			print " Replies :"
+			for r in replies:
+				print " - "+r[0]+" said: "+r[1]
+			print "\n",
 
 		activate = (len(client.posts(sourceBlog+'.tumblr.com', id=id_post, notes_info=True)['posts'][0]['notes'])>=50)
 
@@ -279,15 +288,17 @@ if __name__=='__main__':
 
 
 		if(LOGGING):
-			print "\n LOG - Writing a log in readable_db_dump"
-			dump = open("readable_db_dump", 'w')
+			print "\n LOG - Updating log in readable_note_dump"
+			dump = open("readable_note_dump", 'w')
 			for user in database.keys():
 				if len(database[user])>0:
 					dump.write(user + " had their post reblogged by : "+", ".join(database[user])+"\n")
 				else:
 					dump.write(user + " doesn't have any fRIENDS AND AS SUCH DOESNT HELP PROPAGATE MY POST.\n")
+			for reply in replies:
+				dump.write(reply[0] + " said : "+reply[1]+"\n")
 
-		if VISUALIZATION:
+		if GRAPH_GEN and VISUALIZATION:
 			print " Writing a GML file for Gephi visualization."
 			graphFile = open("score.gml", 'w')
 			graphFile.write("graph\n[\n")
@@ -319,12 +330,13 @@ if __name__=='__main__':
 			p2.start()
 			tags = results.get()
 			p1.terminate()
-			popTags = [(i.encode('utf-8'), tags[i]) for i in sorted(tags, key=lambda x: tags[x])][-10:]
+			popTags = reversed([(i.encode('utf-8'), tags[i]) for i in sorted(tags, key=lambda x: tags[x])][-10:])
+			flush()
 			print " These tags were the most used on the post :"
 			for tag in popTags:
-				print "\t\""+tag[0]+"\" used "+str(tag[1])+" times."
+				print "\t[#"+tag[0]+"] used "+str(tag[1])+" times."
 
-		if EVALUATE_CENTRALITY:
+		if GRAPH_GEN and EVALUATE_CENTRALITY:
 
 			print "\n Starting calculation of centrality."
 
@@ -353,9 +365,8 @@ if __name__=='__main__':
 
 		for table in winners:
 			for user in table:
-				influence_scores[user] = 0
-		for table in winners:
-			for user in table:
+				if user not in influence_scores.keys():
+					influence_scores[user] = 0	
 				influence_scores[user] += table.index(user)
 
 		print " Outputting influence list w/ scores. (arbitrary unit)\n"
