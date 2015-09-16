@@ -19,14 +19,16 @@ import networkx
 #     'WJQ1EbBC52fXV19zsgLd0GMoxlEfC0O8vYLjNAPcwhEa97MMFa'
 # )
 
+version = "0.7"
+
 client = pytumblr.TumblrRestClient('uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu')
 
 class Joss(Exception): pass
 
-parser = argparse.ArgumentParser(prog="Score v0.7")
+parser = argparse.ArgumentParser(prog="Score v"+version, description="Note Analyzer for tumblr posts. If no arguments are provided, will run on http://breadstyx.tumblr.com/post/128187440953/")
 graphrelated = parser.add_argument_group('graph related')
-parser.add_argument("PostId", type=int, help="the ID of the post you want to analyze. ex: http://breadstyx.tumblr.com/<128187440953>/hey-there-fellow", nargs='?', default=128187440953)
-parser.add_argument("sourceBlog", type=str, help="the blog containing the post you want to analyze. ex: http://<breadstyx>.tumblr.com/128187440953/hey-there-fellow", nargs='?', default="breadstyx")
+parser.add_argument("PostId", type=int, help="the ID of the post you want to analyze. ex: http://breadstyx.tumblr.com/post/<128187440953>/hey-there-fellow", nargs='?', default=128187440953)
+parser.add_argument("sourceBlog", type=str, help="the blog containing the post you want to analyze. ex: http://<breadstyx>.tumblr.com/post/128187440953/hey-there-fellow", nargs='?', default="breadstyx")
 parser.add_argument("-l","--logging", help="will log the notes as a readable file called readable_note_dump", action="store_true")
 graphrelated.add_argument("-v","--visualization", help="will create a GML file of notes so that Gelphi can vizualize the graph of reblogs", action="store_true")
 parser.add_argument("-nr","--no-refresh", help="toggle refreshing of notes off - notes will be read from previous dump : Do Not Use if there is no dump available", action="store_true")
@@ -229,7 +231,7 @@ if __name__=='__main__':
 	dummy = Lock()
 	progress = Value('d', 0.0)
 
-	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v0.7 *--  "
+	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v"+version+" *--  "
 
 	if(REGENERATE):
 
@@ -298,8 +300,8 @@ if __name__=='__main__':
 
 
 		if(LOGGING):
-			print "\n LOG - Writing a log in readable_db_dump"
-			dump = open("readable_db_dump", 'w')
+			print "\n LOG - Updating log in readable_note_dump"
+			dump = open("readable_note_dump", 'w')
 			for user in database.keys():
 				if len(database[user])>0:
 					dump.write(user + " had their post reblogged by : "+", ".join(database[user])+"\n")
