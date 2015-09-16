@@ -102,11 +102,12 @@ def scrapping(cli, postID, blogSource, p, q, l, lp):
 		flush()
 		print "\t"+str(reblogs)+" reblogs added to list !\n"
 		flush()
-		print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs.\n"
-		print " Replies :"
-		for r in replies:
-			print " - "+str(r[0])+" said: "+str(r[1])
-		print "\n",
+		print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs. ("+str(reblogs)+"/"+str(notCount)+")\n"
+		if len(replies)>0:
+			print " Replies :"
+			for r in replies:
+				print " - "+str(r[0])+" said: "+str(r[1])
+			print "\n",
 		lp.release()
 
 	q.put_nowait(list(set([n[0] for n in notes])))
@@ -166,7 +167,7 @@ def calcCentrality(G, ret, l, l2):
 	ret.close()
 	return
 
-def populartags(cli, notes, p, l):
+def populartags(cli, notes, p, q, l):
 	tags = {}
 	for n in notes:
 		p.value = float(notes.index(n))/float(len(notes))*100.0
@@ -177,10 +178,8 @@ def populartags(cli, notes, p, l):
 			if tag not in tags.keys():
 				tags[tag] = 0
 			tags[tag] += 1
-	popTags = [str(i) for i in sorted(tags, key=lambda x: tags[x])][-10:]
-	print "These tags were the most used on the post :"
-	for tag in popTags:
-		print "\t\""+tag+"\" used "+str(tags[tag])+" times."
+	q.put_nowait(tags)
+	q.close()
 	return
 
 def new_db(src, data, q, l, p):
@@ -317,15 +316,22 @@ if __name__=='__main__':
 
 		if POPULAR_TAGS:
 
-			print " Fetching tags."
+			print "\n Fetching tags."
 
 			p1 = Process(target = loadingtime, args=[lockPrint, progress])
-			p2 = Process(target = populartags, args=(client, notes, progress, lockPrint))
+			p2 = Process(target = populartags, args=(client, notes, progress, lock))
 			p2.start()
 			time.sleep(5)
 			p1.start()
-			p2.join()
 			p1.terminate()
+			lock.acquire(True)
+			popTags = results.get()
+			time.sleep(.1)
+			lock.release()
+			popTags = [str(i) for i in sorted(tags, key=lambda x: tags[x])][-10:]
+			print " These tags were the most used on the post :"
+			for tag in popTags:
+				print "\t\""+tag+"\" used "+str(tags[tag])+" times."
 
 		if EVALUATE_CENTRALITY:
 
