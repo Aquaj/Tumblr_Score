@@ -22,6 +22,7 @@ REGENERATE = True
 LOGGING = True
 GRAPH_GEN = True
 VISUALIZATION = True
+POPULAR_TAGS = True
 EVALUATE_CENTRALITY = True
 
 id_post = sys.argv[1] if len(sys.argv)>1 else 128187440953
@@ -66,7 +67,7 @@ def scrapping(cli, postID, blogSource, p, q, l, lp):
 					if "original_post" not in l['class']:
 						if("reblog" in l['class']):
 							reblogs+=1
-							notes+=[[str(l.findAll("a", "tumblelog")[0].contents[0]), str(l.findAll("a", "source_tumblelog")[0].contents[0])]]
+							notes+=[[str(l.findAll("a", "tumblelog")[0].contents[0]), str(l.findAll("a", "source_tumblelog")[0].contents[0]), str(l.findAll("span")[0]["data-post-url"].split("/")[-1])]]
 						if("reply" in l['class']):
 							replies+=[[str(l.findAll("a")[1].contents[0]), str(l.findAll("span", "answer_content")[0].contents[0].replace(u"\u2018", "'").replace(u"\u2019", "'"))]]
 					else:
@@ -165,6 +166,22 @@ def calcCentrality(G, ret, l, l2):
 	ret.close()
 	return
 
+def populartags(cli, notes, p, l):
+	tags = {}
+	for n in notes:
+		p.value = float(notes.index(n))/float(len(notes))*100.0
+		user = n[0]
+		waf = n[2]
+		tagsUser = cli.posts(user+".tumblr.com", id=waf)['posts'][0]['tags']
+		for tag in tagsUser:
+			if tag not in tags.keys():
+				tags[tag] = 0
+			tags[tag] += 1
+	popTags = [str(i) for i in sorted(tags, key=lambda x: tags[x])][-10:]
+	print "These tags were the most used on the post :"
+	for tag in popTags:
+		print "\t\""+tag+"\" used "+str(tags[tag])+" times."
+	return
 
 def new_db(src, data, q, l, p):
 	db = {}
@@ -264,7 +281,7 @@ if __name__=='__main__':
 
 			print " Pickling Score in "+dumpfile+" to save time on next uses."
 			filedump = open(dumpfile, 'w')
-			pickle.dump([Score, noteCount], filedump)
+			pickle.dump([Score, noteCount, notes], filedump)
 			filedump.close()
 
 
@@ -294,13 +311,25 @@ if __name__=='__main__':
 
 		print " Loading Score from pickle."
 		filedump = open(dumpfile, 'r')
-		(Score, noteCount) = pickle.load(filedump)
+		(Score, noteCount, notes) = pickle.load(filedump)
 		filedump.close()
 		central = []
 
-		print "\n Starting calculation of centrality."
+		if POPULAR_TAGS:
 
-		if(EVALUATE_CENTRALITY):
+			print " Fetching tags."
+
+			p1 = Process(target = loadingtime, args=[lockPrint, progress])
+			p2 = Process(target = populartags, args=(client, notes, progress, lockPrint))
+			p2.start()
+			time.sleep(5)
+			p1.start()
+			p2.join()
+			p1.terminate()
+
+		if EVALUATE_CENTRALITY:
+
+			print "\n Starting calculation of centrality."
 
 			p1 = Process(target = loadingtime, args=[lockPrint])
 			p2 = Process(target = calcCentrality, args=(Score, results, lock, lockPrint))
@@ -325,7 +354,7 @@ if __name__=='__main__':
 		print "\tCentrality values calculated!"
 
 		print "\n Using centrality to establish who had the most influence on the notes.\n"
-		winners = [[i for i in sorted(central[2], key=lambda x: central[2][x])][-10:] for j in range (4)]
+		winners = [[i for i in sorted(central[j], key=lambda x: central[j][x])][-10:] for j in range (4)]
 
 		influence_scores = {}
 
