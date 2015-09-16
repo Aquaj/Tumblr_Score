@@ -2,7 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import pickle
 import networkx
-from multiprocessing import Process, Lock, Queue, Value
+from multiprocessing import Process, Queue, Value, Lock
 import sys, time, re
 import pytumblr
 
@@ -30,7 +30,7 @@ sourceBlog = sys.argv[2] if len(sys.argv)>2 else "breadstyx"
 
 dumpfile = "score_dump"
 
-def scrapping(cli, postID, blogSource, p, q, l, lp):
+def scrapping(cli, postID, blogSource, p, q, lp):
 	url = ""
 	urlbis = "" 
 	notes=[]
@@ -67,14 +67,14 @@ def scrapping(cli, postID, blogSource, p, q, l, lp):
 					if "original_post" not in l['class']:
 						if("reblog" in l['class']):
 							reblogs+=1
-							notes+=[[str(l.findAll("a", "tumblelog")[0].contents[0]), str(l.findAll("a", "source_tumblelog")[0].contents[0]), str(l.findAll("span")[0]["data-post-url"].split("/")[-1])]]
+							notes+=[[l.findAll("a", "tumblelog")[0].contents[0].encode('utf-8'), l.findAll("a", "source_tumblelog")[0].contents[0].encode('utf-8'), l.findAll("span")[0]["data-post-url"].split("/")[-1].encode('utf-8')]]
 						if("reply" in l['class']):
-							replies+=[[str(l.findAll("a")[1].contents[0]), str(l.findAll("span", "answer_content")[0].contents[0].replace(u"\u2018", "'").replace(u"\u2019", "'"))]]
+							replies+=[[l.findAll("a")[1].contents[0].encode('utf-8'), l.findAll("span", "answer_content")[0].contents[0].encode('utf-8')]]
 					else:
 						raise Joss
 				try:
 					urlbis=url
-					url="?"+str(soup.findAll("a", "more_notes_link")[0]["onclick"].split("?")[1].split(',true')[0][:-1])
+					url="?"+soup.findAll("a", "more_notes_link")[0]["onclick"].split("?")[1].split(',true')[0][:-1].encode('utf-8')
 				except IndexError:
 					lp.acquire()
 					print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
@@ -102,7 +102,7 @@ def scrapping(cli, postID, blogSource, p, q, l, lp):
 		flush()
 		print "\t"+str(reblogs)+" reblogs added to list !\n"
 		flush()
-		print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs. ("+str(reblogs)+"/"+str(notCount)+")\n"
+		print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs. ("+str(reblogs)+"/"+str(noteCount)+")\n"
 		if len(replies)>0:
 			print " Replies :"
 			for r in replies:
@@ -134,40 +134,45 @@ def loadingtime(lock, perc=None):
 			lock.release()
 			j+=1
 
-def calcCentrality(G, ret, l, l2):
-	l.acquire(True)
+def calcCentrality(G, ret, lp):
+	
+	lp.acquire(True)
 	flush()
 	print " Detail of calculations:"
+	lp.release()
+	
 	ya = networkx.closeness_centrality(G)
-	l2.acquire(True)
+	lp.acquire(True)
 	flush()
 	print "\t - Calculation of Closeness done."
-	l2.release()
-	ret.put_nowait(ya)
+	lp.release()
+	
 	yo = networkx.betweenness_centrality(G)
-	l2.acquire(True)
+	lp.acquire(True)
 	flush()
 	print "\t - Calculation of Betweenness done."
-	l2.release()
-	ret.put_nowait(yo)
+	lp.release()
+	
 	yi = networkx.degree_centrality(G)
-	l2.acquire(True)
+	lp.acquire(True)
 	flush()
 	print "\t - Calculation of Degree done."
-	l2.release()
-	ret.put_nowait(yi)
+	lp.release()
+	
 	yu = networkx.load_centrality(G)
-	l2.acquire(True)
+	lp.acquire(True)
 	flush()
 	print "\t - Calculation of Load done."
-	l2.release()
+	lp.release()
+	ret.put_nowait(ya)
+	ret.put_nowait(yo)
+	ret.put_nowait(yi)
 	ret.put_nowait(yu)
 	ret.put('STOP')
-	l.release()
 	ret.close()
 	return
 
-def populartags(cli, notes, p, q, l):
+def populartags(cli, notes, p, q):
 	tags = {}
 	for n in notes:
 		p.value = float(notes.index(n))/float(len(notes))*100.0
@@ -182,9 +187,8 @@ def populartags(cli, notes, p, q, l):
 	q.close()
 	return
 
-def new_db(src, data, q, l, p):
+def new_db(src, data, q, p):
 	db = {}
-	l.acquire(True)
 	maxlength = len(src)*len(data)
 	progress = 0
 	for user in src:
@@ -197,13 +201,11 @@ def new_db(src, data, q, l, p):
 			p.value = progress*1.0/maxlength*100.0
 	q.put(db)
 	q.close()
-	l.release()
 	return
 
 if __name__=='__main__':
 
 	results = Queue()
-	lock = Lock()
 	lockPrint = Lock()
 	dummy = Lock()
 	progress = Value('d', 0.0)
@@ -214,17 +216,13 @@ if __name__=='__main__':
 
 		if True:
 			p1 = Process(target = loadingtime, args=(lockPrint, progress))
-			p2 = Process(target = scrapping, args=(client, id_post, sourceBlog, progress, results, lock, lockPrint))
+			p2 = Process(target = scrapping, args=(client, id_post, sourceBlog, progress, results, lockPrint))
 			p2.start()
-			time.sleep(0.2)
 			p1.start()
-			lock.acquire(True)
 			users = results.get()
 			notes = results.get()
 			replies = results.get()
 			noteCount = results.get()
-			time.sleep(.1)
-			lock.release()
 			p1.terminate()
 
 			d = open("debug", 'w')
@@ -259,14 +257,10 @@ if __name__=='__main__':
 
 			progress.value = 0.0
 			p1 = Process(target = loadingtime, args=(dummy, progress))
-			p2 = Process(target = new_db, args=(users, notes, results, lock, progress))
+			p2 = Process(target = new_db, args=(users, notes, results, progress))
 			p2.start()
 			p1.start()
-			time.sleep(5)
-			lock.acquire(True)
 			database = results.get()
-			time.sleep(.1)
-			lock.release()
 			p1.terminate()
 			flush()
 			print("\tData formatted!")
@@ -318,35 +312,28 @@ if __name__=='__main__':
 
 			print "\n Fetching tags."
 
-			p1 = Process(target = loadingtime, args=[lockPrint, progress])
-			p2 = Process(target = populartags, args=(client, notes, progress, lock))
-			p2.start()
-			time.sleep(5)
+			progress.value = 0.0
+			p1 = Process(target = loadingtime, args=[dummy, progress])
+			p2 = Process(target = populartags, args=(client, notes, progress, results))
 			p1.start()
+			p2.start()
+			tags = results.get()
 			p1.terminate()
-			lock.acquire(True)
-			popTags = results.get()
-			time.sleep(.1)
-			lock.release()
-			popTags = [str(i) for i in sorted(tags, key=lambda x: tags[x])][-10:]
+			popTags = [(i.encode('utf-8'), tags[i]) for i in sorted(tags, key=lambda x: tags[x])][-10:]
 			print " These tags were the most used on the post :"
 			for tag in popTags:
-				print "\t\""+tag+"\" used "+str(tags[tag])+" times."
+				print "\t\""+tag[0]+"\" used "+str(tag[1])+" times."
 
 		if EVALUATE_CENTRALITY:
 
 			print "\n Starting calculation of centrality."
 
 			p1 = Process(target = loadingtime, args=[lockPrint])
-			p2 = Process(target = calcCentrality, args=(Score, results, lock, lockPrint))
+			p2 = Process(target = calcCentrality, args=(Score, results, lockPrint))
 			p2.start()
-			time.sleep(5)
 			p1.start()
-			lock.acquire(True)
 			for i in iter(results.get, 'STOP'):
 				central.append(i)
-			time.sleep(.1)
-			lock.release()
 			p1.terminate()
 			dumpfile = open("centrality_dump", 'w')
 			pickle.dump(central, dumpfile)
