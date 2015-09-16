@@ -62,7 +62,7 @@ def scrapping(cli, postID, blogSource, p, q, lp):
 	notesClient = cli.posts(blogSource+'.tumblr.com', id=postID, notes_info=True)['posts'][0]
 	toDo = notesClient['note_count']
 	try:
-		if len(notesClient['notes'])==50:
+		if toDo>50:
 			i = 0
 			while True:
 				while notesClient['notes'][i]["type"] != "reblog":
@@ -114,22 +114,13 @@ def scrapping(cli, postID, blogSource, p, q, lp):
 					if n['type']!="posted":
 						if n['type']=="reblog":
 							reblogs+=1
+							notes += [[""]]
 					if n['type']=="reply":
 							replies+=[[n['blog_name'],n['reply_text']]]
 					else:
 						raise Joss
 	except Joss:
-		lp.acquire()
-		flush()
-		print "\t"+str(reblogs)+" reblogs added to list !\n"
-		flush()
-		print "\tNotes composed of "+str(int(reblogs*1.0/(noteCount*1.0)*100))+"% reblogs. ("+str(reblogs)+"/"+str(noteCount)+")\n"
-		if len(replies)>0:
-			print " Replies :"
-			for r in replies:
-				print " - "+str(r[0])+" said: "+str(r[1])
-			print "\n",
-		lp.release()
+		pass
 
 	q.put_nowait(list(set([n[0] for n in notes])))
 	q.put_nowait(notes)
@@ -235,28 +226,25 @@ if __name__=='__main__':
 
 	if(REGENERATE):
 
-		if True:
-			p1 = Process(target = loadingtime, args=(lockPrint, progress))
-			p2 = Process(target = scrapping, args=(client, id_post, sourceBlog, progress, results, lockPrint))
-			p2.start()
-			p1.start()
-			users = results.get()
-			notes = results.get()
-			replies = results.get()
-			noteCount = results.get()
-			p1.terminate()
+		p1 = Process(target = loadingtime, args=(lockPrint, progress))
+		p2 = Process(target = scrapping, args=(client, id_post, sourceBlog, progress, results, lockPrint))
+		p2.start()
+		p1.start()
+		users = results.get()
+		notes = results.get()
+		replies = results.get()
+		noteCount = results.get()
+		p1.terminate()
 
-			d = open("debug", 'w')
-			pickle.dump([users, notes, noteCount], d)
-			d.close()
-		else:
-			d = open("debug", 'r')
-			a = pickle.load(d)
-			users = a[0]
-			notes = a[1]
-			replies = a[2]
-			noteCount = a[3]
-			d.close()
+		flush()
+		print "\t"+str(len(notes))+" reblogs added to list !\n"
+		flush()
+		print "\tNotes composed of "+str(int(len(notes)*1.0/(noteCount*1.0)*100))+"% reblogs. ("+str(len(notes))+"/"+str(noteCount)+")\n"
+		if len(replies)>0:
+			print " Replies :"
+			for r in replies:
+				print " - "+r[0]+" said: "+r[1]
+			print "\n",
 
 		activate = (len(client.posts(sourceBlog+'.tumblr.com', id=id_post, notes_info=True)['posts'][0]['notes'])>=50)
 
@@ -307,6 +295,8 @@ if __name__=='__main__':
 					dump.write(user + " had their post reblogged by : "+", ".join(database[user])+"\n")
 				else:
 					dump.write(user + " doesn't have any fRIENDS AND AS SUCH DOESNT HELP PROPAGATE MY POST.\n")
+			for reply in replies:
+				dump.write(reply[0] + " said : "+reply[1]+"\n")
 
 		if GRAPH_GEN and VISUALIZATION:
 			print " Writing a GML file for Gephi visualization."
@@ -341,9 +331,10 @@ if __name__=='__main__':
 			tags = results.get()
 			p1.terminate()
 			popTags = reversed([(i.encode('utf-8'), tags[i]) for i in sorted(tags, key=lambda x: tags[x])][-10:])
+			flush()
 			print " These tags were the most used on the post :"
 			for tag in popTags:
-				print "\t\""+tag[0]+"\" used "+str(tag[1])+" times."
+				print "\t[#"+tag[0]+"] used "+str(tag[1])+" times."
 
 		if GRAPH_GEN and EVALUATE_CENTRALITY:
 
