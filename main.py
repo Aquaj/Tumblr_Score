@@ -51,6 +51,19 @@ sourceBlog = args.sourceBlog
 
 dumpfile = "score_dump_"+str(id_post)
 
+def fragperc(G,p):
+	pS = 0
+	p2 = 0
+	E = len(G.edges())
+	V = len(G.nodes())
+	while (p.value==100.0): pass
+	for pX in range(1,E*V):
+		for p1 in range(E+V):
+			pS = float(pX*p2)/float(E+V)
+			p.value = pS/float(E*V)*13000
+			p2+=1
+	return
+
 def scrapping(cli, postID, blogSource, p, q, lp):
 	url = ""
 	urlbis = "" 
@@ -82,25 +95,20 @@ def scrapping(cli, postID, blogSource, p, q, lp):
 			while(True):
 				page = requests.get(theURL+url)
 				soup = BeautifulSoup(page.text, 'html.parser')
-				for l in soup.findAll("li"):
+				for l in soup.findAll("li", "note"):
 					noteCount += 1
-					p.value = ((noteCount-1)*1.0/toDo*1.0)*100.0
+					p.value = (float(noteCount)/float(toDo))*100.0
 					if "original_post" not in l['class']:
 						if("reblog" in l['class']):
 							reblogs+=1
 							notes+=[[l.findAll("a", "tumblelog")[0].contents[0].encode('utf-8'), l.findAll("a", "source_tumblelog")[0].contents[0].encode('utf-8'), l.findAll("span")[0]["data-post-url"].split("/")[-1].encode('utf-8')]]
 						if("reply" in l['class']):
 							replies+=[[l.findAll("a")[1].contents[0].encode('utf-8'), l.findAll("span", "answer_content")[0].contents[0].encode('utf-8')]]
+						if("more_notes_link_container" in l['class']):
+							url="?"+l.findAll("a")[0]["onclick"].split("?")[1].split(',true')[0][:-1].encode('utf-8')		
 					else:
 						raise Joss
-				try:
-					urlbis=url
-					url="?"+soup.findAll("a", "more_notes_link")[0]["onclick"].split("?")[1].split(',true')[0][:-1].encode('utf-8')
-				except IndexError:
-					lp.acquire()
-					print "We're not supposed to be here at Aaaaaaall - lalalalilalaaaa"
-					lp.release()
-					raise Joss
+				noteCount -= 1
 		else:
 			lp.acquire()
 			flush()
@@ -110,7 +118,7 @@ def scrapping(cli, postID, blogSource, p, q, lp):
 			while(True):
 				for n in notesClient['notes']:
 					noteCount += 1
-					p.value = (noteCount*1.0/toDo*1.0)*100.0
+					p.value = (float(noteCount)/float(toDo))*100.0
 					if n['type']!="posted":
 						if n['type']=="reblog":
 							reblogs+=1
@@ -146,7 +154,7 @@ def loadingtime(lock, perc=None):
 			lock.release()
 			j+=1
 
-def calcCentrality(G, ret, lp):
+def calcCentrality(G, ret, p, lp):
 	
 	lp.acquire(True)
 	flush()
@@ -159,6 +167,7 @@ def calcCentrality(G, ret, lp):
 	print "\t - Calculation of Closeness done."
 	lp.release()
 	
+	p.value = 0.0
 	yo = networkx.betweenness_centrality(G)
 	lp.acquire(True)
 	flush()
@@ -186,8 +195,10 @@ def calcCentrality(G, ret, lp):
 
 def populartags(cli, notes, p, q):
 	tags = {}
-	for n in notes:
-		p.value = float(notes.index(n))/float(len(notes))*100.0
+	L = len(notes)
+	for i in range(L):
+		p.value = float(i)/float(L)*100.0
+		n = notes[i]
 		user = n[0]
 		waf = n[2]
 		tagsUser = cli.posts(user+".tumblr.com", id=waf)['posts'][0]['tags']
@@ -201,16 +212,15 @@ def populartags(cli, notes, p, q):
 
 def new_db(src, data, q, p):
 	db = {}
-	maxlength = len(src)*len(data)
+	maxlength = len(src)
 	progress = 0
 	for user in src:
 		db[user] = []
 		for n in sorted(data):
-			save = p.value
 			if (n[1] == user):
 				db[user] += [n[0]]
-			progress += 1	
-			p.value = progress*1.0/maxlength*100.0
+		progress += 1
+		p.value = progress*1.0/maxlength*100.0
 	q.put(db)
 	q.close()
 	return
@@ -299,15 +309,17 @@ if __name__=='__main__':
 				dump.write(reply[0] + " said : "+reply[1]+"\n")
 
 		if GRAPH_GEN and VISUALIZATION:
+			output_nodes = output_edges = ""
 			print " Writing a GML file for Gephi visualization."
 			graphFile = open("score.gml", 'w')
 			graphFile.write("graph\n[\n")
 			for node in database.keys():
-				graphFile.write("  node\n  [\n   id "+node+"\n   label "+node+"\n  ]\n")
-			print "\t - Nodes written !"
-			for node in database.keys():
+				output_nodes += "  node\n  [\n   id "+node+"\n   label "+node+"\n  ]\n"
 				for edgeEnd in database[node]:
-					graphFile.write("  edge\n  [\n   source "+node+"\n   target "+edgeEnd+"\n  ]\n")
+					output_edges += "  edge\n  [\n   source "+node+"\n   target "+edgeEnd+"\n  ]\n"
+			graphFile.write(output_nodes)
+			print "\t - Nodes written !"
+			graphFile.write(output_edges)
 			print "\t - Edges written !\n"
 			graphFile.write("]")
 
@@ -329,6 +341,7 @@ if __name__=='__main__':
 			p1.start()
 			p2.start()
 			tags = results.get()
+			progress.value = 100.0
 			p1.terminate()
 			popTags = reversed([(i.encode('utf-8'), tags[i]) for i in sorted(tags, key=lambda x: tags[x])][-10:])
 			flush()
@@ -339,14 +352,17 @@ if __name__=='__main__':
 		if GRAPH_GEN and EVALUATE_CENTRALITY:
 
 			print "\n Starting calculation of centrality."
-
-			p1 = Process(target = loadingtime, args=[lockPrint])
-			p2 = Process(target = calcCentrality, args=(Score, results, lockPrint))
+			progress.value = 100.0
+			p1 = Process(target = loadingtime, args=[lockPrint, progress])
+			p2 = Process(target = calcCentrality, args=(Score, results, progress, lockPrint))
+			p3 = Process(target = fragperc, args=(Score, progress))
 			p2.start()
+			p3.start()
 			p1.start()
 			for i in iter(results.get, 'STOP'):
 				central.append(i)
 			p1.terminate()
+			p3.terminate()
 			dumpfile = open("centrality_dump", 'w')
 			pickle.dump(central, dumpfile)
 			dumpfile.close()
@@ -367,7 +383,7 @@ if __name__=='__main__':
 			for user in table:
 				if user not in influence_scores.keys():
 					influence_scores[user] = 0	
-				influence_scores[user] += table.index(user)
+				influence_scores[user] += table.index(user)+1
 
 		print " Outputting influence list w/ scores. (arbitrary unit)\n"
 		leaderboard = [(i, influence_scores[i]) for i in sorted(influence_scores, key=lambda x: influence_scores[x])]
