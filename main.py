@@ -319,7 +319,7 @@ if __name__=='__main__':
 			p2.start()
 			tags = results.get()
 			p1.terminate()
-			popTags = [(i.encode('utf-8'), tags[i]) for i in sorted(tags, key=lambda x: tags[x])][-10:]
+			popTags = [(i.encode('utf-8'), tags[i]) for i in reversed(sorted(tags, key=lambda x: tags[x])][-10:])
 			print " These tags were the most used on the post :"
 			for tag in popTags:
 				print "\t\""+tag[0]+"\" used "+str(tag[1])+" times."
@@ -353,9 +353,8 @@ if __name__=='__main__':
 
 		for table in winners:
 			for user in table:
-				influence_scores[user] = 0
-		for table in winners:
-			for user in table:
+				if user not in influence_scores.keys():
+					influence_scores[user] = 0	
 				influence_scores[user] += table.index(user)
 
 		print " Outputting influence list w/ scores. (arbitrary unit)\n"
