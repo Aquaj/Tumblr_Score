@@ -1,10 +1,16 @@
 import sys, time, re
+import argparse
+import pickle
+
 import pytumblr
+
 import requests
 from bs4 import BeautifulSoup
+
 from multiprocessing import Process, Queue, Value, Lock
+
 import networkx
-import pickle
+
 
 # client = pytumblr.TumblrRestClient(
 #     'uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu',
@@ -17,18 +23,31 @@ client = pytumblr.TumblrRestClient('uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJe
 
 class Joss(Exception): pass
 
-ANALYSIS = True
-REGENERATE = True
-LOGGING = True
-GRAPH_GEN = True
-VISUALIZATION = True
-POPULAR_TAGS = True
-EVALUATE_CENTRALITY = True
+parser = argparse.ArgumentParser(prog="Score v0.7")
+graphrelated = parser.add_argument_group('graph related')
+parser.add_argument("PostId", type=int, help="the ID of the post you want to analyze. ex: http://breadstyx.tumblr.com/<128187440953>/hey-there-fellow", nargs='?', default=128187440953)
+parser.add_argument("sourceBlog", type=str, help="the blog containing the post you want to analyze. ex: http://<breadstyx>.tumblr.com/128187440953/hey-there-fellow", nargs='?', default="breadstyx")
+parser.add_argument("-l","--logging", help="will log the notes as a readable file called readable_note_dump", action="store_true")
+graphrelated.add_argument("-v","--visualization", help="will create a GML file of notes so that Gelphi can vizualize the graph of reblogs", action="store_true")
+parser.add_argument("-nr","--no-refresh", help="toggle refreshing of notes off - notes will be read from previous dump : Do Not Use if there is no dump available", action="store_true")
+parser.add_argument("-na","--no-analysis", help="toggle analysis of notes off", action="store_true")
+parser.add_argument("-nt","--no-tags", help="toggle the analysis of user tags off and as such wont display the tags frequently used on the post", action="store_true")
+graphrelated.add_argument("-ni", "--no-influence", help ="toggle the analysis of users' influence on reblogs off and as such won't display the bloggers that had the most influence on the post", action="store_true")
+parser.add_argument("-ng", "--no-graph", help ="toggle off graph generation from notes - caution: graph-related options won't work", action="store_true")
+args = parser.parse_args()
 
-id_post = sys.argv[1] if len(sys.argv)>1 else 128187440953
-sourceBlog = sys.argv[2] if len(sys.argv)>2 else "breadstyx"
+LOGGING = args.logging
+VISUALIZATION = args.visualization
+REGENERATE = not args.no_refresh
+ANALYSIS = not args.no_analysis
+GRAPH_GEN = not args.no_graph
+POPULAR_TAGS = not args.no_tags
+EVALUATE_CENTRALITY = not args.no_influence
 
-dumpfile = "score_dump"
+id_post = args.PostId
+sourceBlog = args.sourceBlog
+
+dumpfile = "score_dump_"+str(id_post)
 
 def scrapping(cli, postID, blogSource, p, q, lp):
 	url = ""
@@ -287,7 +306,7 @@ if __name__=='__main__':
 				else:
 					dump.write(user + " doesn't have any fRIENDS AND AS SUCH DOESNT HELP PROPAGATE MY POST.\n")
 
-		if VISUALIZATION:
+		if GRAPH_GEN and VISUALIZATION:
 			print " Writing a GML file for Gephi visualization."
 			graphFile = open("score.gml", 'w')
 			graphFile.write("graph\n[\n")
@@ -324,7 +343,7 @@ if __name__=='__main__':
 			for tag in popTags:
 				print "\t\""+tag[0]+"\" used "+str(tag[1])+" times."
 
-		if EVALUATE_CENTRALITY:
+		if GRAPH_GEN and EVALUATE_CENTRALITY:
 
 			print "\n Starting calculation of centrality."
 
