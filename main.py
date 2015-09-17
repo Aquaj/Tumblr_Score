@@ -30,6 +30,7 @@ graphrelated = parser.add_argument_group('graph related')
 parser.add_argument("PostId", type=int, help="the ID of the post you want to analyze. ex: http://breadstyx.tumblr.com/post/<128187440953>/hey-there-fellow", nargs='?', default=128187440953)
 parser.add_argument("sourceBlog", type=str, help="the blog containing the post you want to analyze. ex: http://<breadstyx>.tumblr.com/post/128187440953/hey-there-fellow", nargs='?', default="breadstyx")
 parser.add_argument("-l","--logging", help="will log the notes as a readable file called readable_note_dump", action="store_true")
+parser.add_argument("-c", "--cleanup", help="cleans up by removing all dumps at the end of the program", action="store_true")
 parser.add_argument("-t","--tags", help="will the analyze user tags and display the tags and words most frequently used in tags of the post - /!\ Caution: can be quite long if no dump present.", action="store_true", default=False)
 graphrelated.add_argument("-v","--visualization", help="will create a GML file of notes so that Gelphi can vizualize the graph of reblogs", action="store_true")
 parser.add_argument("-nr","--no-refresh", help="toggle refreshing of notes off - notes will be read from previous dump : Do Not Use if there is no dump available", action="store_true")
@@ -45,6 +46,7 @@ ANALYSIS = not args.no_analysis
 GRAPH_GEN = not args.no_graph
 POPULAR_TAGS = args.tags
 EVALUATE_CENTRALITY = not args.no_influence
+CLEAN = args.cleanup
 
 id_post = args.PostId
 sourceBlog = args.sourceBlog
@@ -239,8 +241,10 @@ if __name__=='__main__':
 
 	print "\n  --* TUMBLR SCORE - Note Analysis & User Influence v"+version+" *--  "
 
-	if(REGENERATE):
+	if(REGENERATE or not trashJudge):
 
+		if not REGENERATE:
+			print "\n At least one fetching is required to perform the program."
 		if trashJudge:
 			print "\n A dump of this post's notes already exists. Are you sure you want to refresh it? To use it without refreshing it run :"
 			print " python main.py"+((" "+str(id_post)+" "+sourceBlog)+" " if (id_post, sourceBlog) != (128187440953, "breadstyx") else " ")+"-nr\n"
@@ -447,3 +451,12 @@ if __name__=='__main__':
 		leaderboard = [(i, influence_scores[i]) for i in sorted(influence_scores, key=lambda x: influence_scores[x])]
 		for score in reversed(leaderboard):
 			print " \t"+str(len(leaderboard)-leaderboard.index(score))+" - "+str(score[0])+" - influence: "+str(score[1])
+
+	if CLEAN:
+		print " Cleaning up all dumps !"
+		i = 0
+		for f in os.listdir("."):
+			if re.search("^(score|notes|tags)_dump_[0-9]{12}$", f):
+				os.remove(os.path.join(".", f))
+				i += 1
+		print " Removed "+str(i)+" dumpfiles !"
