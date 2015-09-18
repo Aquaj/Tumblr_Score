@@ -19,7 +19,7 @@ import networkx
 #     'WJQ1EbBC52fXV19zsgLd0GMoxlEfC0O8vYLjNAPcwhEa97MMFa'
 # )
 
-version = "0.9.9"
+version = "1.0"
 
 client = pytumblr.TumblrRestClient('uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu')
 
