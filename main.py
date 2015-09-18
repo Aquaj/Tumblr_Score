@@ -111,6 +111,7 @@ def scrapping(cli, postID, blogSource, p, q, lp):
 						if("more_notes_link_container" in l['class']):
 							url="?"+l.findAll("a")[0]["onclick"].split("?")[1].split(',true')[0][:-1].encode('utf-8')		
 					else:
+						notes+=[[l.findAll("a")[1].contents[0].encode('utf-8'), l.findAll("a")[1].contents[0].encode('utf-8'), l.findAll("span")[0]["data-post-url"].split("/")[-1].encode('utf-8')]]
 						raise Joss
 				noteCount -= 1
 		else:
@@ -130,6 +131,7 @@ def scrapping(cli, postID, blogSource, p, q, lp):
 						if n['type']=="reply":
 							replies+=[[n['blog_name'],n['reply_text']]]
 					else:
+						notes += [[n['blog_name'],"", int(n['post_id'])]]
 						raise Joss
 	except Joss:
 		pass
@@ -158,7 +160,42 @@ def loadingtime(lock, perc=None):
 			lock.release()
 			j+=1
 
-def calcCentrality(G, ret, p, lp):
+def calcCentrality(G, db, ret, p, lp):
+
+	def ssspb(G, s):
+		S = []
+		P = {}
+		for v in G:
+			P[v] = []
+		sigma = dict.fromkeys(G, 0.0)	# sigma[v]=0 for v in G
+		D = {}
+		sigma[s] = 1.0
+		D[s] = 0
+		Q = [s]
+		while Q:   # use BFS to find shortest paths
+			v = Q.pop(0)
+			S.append(v)
+			Dv = D[v]
+			sigmav = sigma[v]
+			for w in G[v]:
+				if w not in D:
+					Q.append(w)
+					D[w] = Dv + 1
+				if D[w] == Dv + 1:   # this is a shortest path, count paths
+					sigma[w] += sigmav
+					P[w].append(v)  # predecessors
+		return S, P, sigma
+
+	def _accumulate_basic(betweenness, S, P, sigma, s):
+		delta = dict.fromkeys(S, 0)
+		while S:
+			w = S.pop()
+			coeff = (1.0 + delta[w]) / sigma[w]
+			for v in P[w]:
+			   	delta[v] += sigma[v] * coeff
+			if w != s:
+				betweenness[w] += delta[w]
+		return betweenness
 	
 	lp.acquire(True)
 	flush()
@@ -172,7 +209,22 @@ def calcCentrality(G, ret, p, lp):
 	lp.release()
 	
 	p.value = 0.0
+	nodes = db.keys()
+	betweenness = dict.fromkeys(nodes, 0.0)
+	for s in nodes:
+		S, P, sigma = ssspb(db, s)
+		betweenness = _accumulate_basic(betweenness, S, P, sigma, s)
+
 	yo = networkx.betweenness_centrality(G)
+
+	print betweenness
+	print yo
+	for i in betweenness.keys():
+	 	if betweenness[i] != yo[i]:
+	 		print "And a one:" + i
+	for i in yo.keys():
+	 	if betweenness[i] != yo[i]:
+	 		print "And a two:" + i
 	lp.acquire(True)
 	flush()
 	print "\t - Calculation of Betweenness done."
@@ -369,8 +421,6 @@ if __name__=='__main__':
 
 	if ANALYSIS:
 
-		central = []
-
 		if POPULAR_TAGS:
 			if trashStreetArtist and REGENERATE:
 				print " A dump of this posts' user tags already exists. Are you sure you want to refresh it? To use it without refreshing it run :"
@@ -419,13 +469,14 @@ if __name__=='__main__':
 			for word in popWords:
 				print "\t\""+word[0]+"\" used "+str(word[1])+" times."
 
-
 		if (GRAPH_GEN or trashLord) and EVALUATE_CENTRALITY:
+
+			central = []
 
 			print "\n Starting calculation of centrality."
 			progress.value = 100.0
 			p1 = Process(target = loadingtime, args=[lockPrint, progress])
-			p2 = Process(target = calcCentrality, args=(Score, results, progress, lockPrint))
+			p2 = Process(target = calcCentrality, args=(Score, database, results, progress, lockPrint))
 			p3 = Process(target = fragperc, args=(Score, progress))
 			p2.start()
 			p3.start()
