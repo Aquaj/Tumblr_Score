@@ -1,4 +1,4 @@
-import sys, time, re, os
+import sys, time, re, os, string
 import argparse
 import pickle
 
@@ -117,7 +117,7 @@ def scrapping(cli, postID, blogSource, p, q, lp):
 			lp.acquire()
 			flush()
 			print "\n Using API to get notes -- That one case where the API isn't useless, wow."
-			print " -- No influence analysis or graph can be provided under 50 notes. --\n"
+			print " -- /!\ No influence analysis or graph can be provided under 50 notes. --\n"
 			lp.release()
 			while(True):
 				for n in notesClient['notes']:
@@ -126,8 +126,8 @@ def scrapping(cli, postID, blogSource, p, q, lp):
 					if n['type']!="posted":
 						if n['type']=="reblog":
 							reblogs+=1
-							notes += [[""]]
-					if n['type']=="reply":
+							notes += [[n['blog_name'],"", int(n['post_id'])]]
+						if n['type']=="reply":
 							replies+=[[n['blog_name'],n['reply_text']]]
 					else:
 						raise Joss
@@ -292,7 +292,6 @@ if __name__=='__main__':
 
 	GRAPH_GEN = GRAPH_GEN and activate
 	VISUALIZATION = VISUALIZATION and activate
-	ANALYSIS = ANALYSIS and activate
 	EVALUATE_CENTRALITY = EVALUATE_CENTRALITY and activate
 	LOGGING = LOGGING and activate
 	
@@ -377,7 +376,7 @@ if __name__=='__main__':
 				print " A dump of this posts' user tags already exists. Are you sure you want to refresh it? To use it without refreshing it run :"
 				print " python main.py"+((" "+str(id_post)+" "+sourceBlog)+" " if (id_post, sourceBlog) != (128187440953, "breadstyx") else " ")+"-nr\n"
 
-			print "\n Fetching tags."
+			print " Fetching tags."
 
 			if REGENERATE or not trashStreetArtist:
 				progress.value = 0.0
@@ -402,7 +401,10 @@ if __name__=='__main__':
 
 			wc = {}
 			for tag in tags.keys():
-				for word in tag.split():
+				for w in tag.split():
+					word = w
+					for p in string.punctuation:
+						word = word.replace(p, "")
 					if word not in wc.keys():
 						wc[word] = 0
 					wc[word] += tags[tag]
@@ -433,24 +435,24 @@ if __name__=='__main__':
 			p1.terminate()
 			p3.terminate()
 
-		flush()
-		print "\tCentrality values calculated!"
+			flush()
+			print "\tCentrality values calculated!"
 
-		print "\n Using centrality to establish who had the most influence on the notes.\n"
-		winners = [[i for i in sorted(central[j], key=lambda x: central[j][x])][-10:] for j in range (4)]
+			print "\n Using centrality to establish who had the most influence on the notes.\n"
+			winners = [[i for i in sorted(central[j], key=lambda x: central[j][x])][-10:] for j in range (4)]
 
-		influence_scores = {}
+			influence_scores = {}
 
-		for table in winners:
-			for user in table:
-				if user not in influence_scores.keys():
-					influence_scores[user] = 0	
-				influence_scores[user] += table.index(user)+1
+			for table in winners:
+				for user in table:
+					if user not in influence_scores.keys():
+						influence_scores[user] = 0	
+					influence_scores[user] += table.index(user)+1
 
-		print " Outputting influence list w/ scores. (arbitrary unit)\n"
-		leaderboard = [(i, influence_scores[i]) for i in sorted(influence_scores, key=lambda x: influence_scores[x])]
-		for score in reversed(leaderboard):
-			print " \t"+str(len(leaderboard)-leaderboard.index(score))+" - "+str(score[0])+" - influence: "+str(score[1])
+			print " Outputting influence list w/ scores. (arbitrary unit)\n"
+			leaderboard = [(i, influence_scores[i]) for i in sorted(influence_scores, key=lambda x: influence_scores[x])]
+			for score in reversed(leaderboard):
+				print " \t"+str(len(leaderboard)-leaderboard.index(score))+" - "+str(score[0])+" - influence: "+str(score[1])
 
 	if CLEAN:
 		print " Cleaning up all dumps !"
