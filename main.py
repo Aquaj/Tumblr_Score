@@ -7,7 +7,9 @@ import pytumblr
 import requests
 from bs4 import BeautifulSoup
 
-from multiprocessing import Process, Queue, Value, Lock
+import multiprocessing
+import multiprocessing.forking
+from multiprocessing import Queue, Value, Lock
 
 
 # client = pytumblr.TumblrRestClient(
@@ -17,43 +19,29 @@ from multiprocessing import Process, Queue, Value, Lock
 #	 'WJQ1EbBC52fXV19zsgLd0GMoxlEfC0O8vYLjNAPcwhEa97MMFa'
 # )
 
-version = "0.9.9"
+class _Popen(multiprocessing.forking.Popen):
+    def __init__(self, *args, **kw):
+        if hasattr(sys, 'frozen'):
+            # We have to set original _MEIPASS2 value from sys._MEIPASS
+            # to get --onefile mode working.
+            os.putenv('_MEIPASS2', sys._MEIPASS)
+        try:
+            super(_Popen, self).__init__(*args, **kw)
+        finally:
+            if hasattr(sys, 'frozen'):
+                # On some platforms (e.g. AIX) 'os.unsetenv()' is not
+                # available. In those cases we cannot delete the variable
+                # but only set it to the empty string. The bootloader
+                # can handle this case.
+                if hasattr(os, 'unsetenv'):
+                    os.unsetenv('_MEIPASS2')
+                else:
+                    os.putenv('_MEIPASS2', '')
 
-corpus = ["the", "be", "to", "of", "and", "a", "in", "that", "have", "I", "it", "for", "not", "on", "with", "he", "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", "my", "one", "would", "there", "their", "what", "so", "out", "if", "who", "get", "which", "go", "me", "when", "make", "can", "like", "i", "is", "are", "all", "then", "u"]
-
-client = pytumblr.TumblrRestClient('uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu')
+class Process(multiprocessing.Process):
+    _Popen = _Popen
 
 class Joss(Exception): pass
-
-parser = argparse.ArgumentParser(prog="Score v"+version, description="Note Analyzer for tumblr posts. If no arguments are provided, will run on http://breadstyx.tumblr.com/post/128187440953/")
-graphrelated = parser.add_argument_group('graph related')
-parser.add_argument("PostId", type=int, help="the ID of the post you want to analyze. ex: http://breadstyx.tumblr.com/post/<128187440953>/hey-there-fellow", nargs='?', default=128187440953)
-parser.add_argument("sourceBlog", type=str, help="the blog containing the post you want to analyze. ex: http://<breadstyx>.tumblr.com/post/128187440953/hey-there-fellow", nargs='?', default="breadstyx")
-parser.add_argument("-l","--logging", help="will log the notes as a readable file called readable_note_dump", action="store_true")
-parser.add_argument("-c", "--cleanup", help="cleans up by removing all dumps at the end of the program", action="store_true")
-parser.add_argument("-t","--tags", help="will the analyze user tags and display the tags and words most frequently used in tags of the post - /!\ Caution: can be quite long if no dump present.", action="store_true", default=False)
-graphrelated.add_argument("-v","--visualization", help="will create a GML file of notes so that Gelphi can vizualize the graph of reblogs", action="store_true")
-parser.add_argument("-nr","--no-refresh", help="toggle refreshing of notes off - notes will be read from previous dump : Do Not Use if there is no dump available", action="store_true")
-parser.add_argument("-na","--no-analysis", help="toggle analysis of notes off", action="store_true")
-graphrelated.add_argument("-ni", "--no-influence", help ="toggle the analysis of users' influence on reblogs off and as such won't display the bloggers that had the most influence on the post", action="store_true")
-parser.add_argument("-ng", "--no-graph", help ="toggle off graph generation from notes - caution: graph-related options won't work if no dump exist", action="store_true")
-args = parser.parse_args()
-
-LOGGING = args.logging
-VISUALIZATION = args.visualization
-REGENERATE = not args.no_refresh
-ANALYSIS = not args.no_analysis
-GRAPH_GEN = not args.no_graph
-POPULAR_TAGS = args.tags
-EVALUATE_CENTRALITY = not args.no_influence
-CLEAN = args.cleanup
-
-id_post = args.PostId
-sourceBlog = args.sourceBlog
-
-dumpfile = "score_dump_"+str(id_post)
-notesdump = "notes_dump_"+str(id_post)
-tagsdump = "tags_dump_"+str(id_post)
 
 def scrapping(cli, postID, blogSource, p, q, lp):
 	url = ""
@@ -302,6 +290,46 @@ def new_db(src, data, q, p):
 
 if __name__=='__main__':
 
+	multiprocessing.freeze_support()
+
+	version = "0.9.9"
+
+	corpus = ["the", "be", "to", "of", "and", "a", "in", "that", "have", "I", "it", "for", "not", "on", "with", "im" "he", "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", "my", "one", "would", "there", "their", "what", "so", "out", "if", "who", "get", "which", "go", "me", "when", "make", "can", "like", "i", "is", "are", "all", "then", "u"]
+
+	client = pytumblr.TumblrRestClient('uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu')
+
+	parser = argparse.ArgumentParser(prog="Score v"+version, description="Note Analyzer for tumblr posts. If no arguments are provided, will run on http://breadstyx.tumblr.com/post/128187440953/")
+	graphrelated = parser.add_argument_group('graph related')
+	parser.add_argument("PostId", type=int, help="the ID of the post you want to analyze. ex: http://breadstyx.tumblr.com/post/<128187440953>/hey-there-fellow", nargs='?', default=128187440953)
+	parser.add_argument("sourceBlog", type=str, help="the blog containing the post you want to analyze. ex: http://<breadstyx>.tumblr.com/post/128187440953/hey-there-fellow", nargs='?', default="breadstyx")
+	parser.add_argument("-l","--logging", help="will log the notes as a readable file called readable_note_dump", action="store_true")
+	parser.add_argument("-c", "--cleanup", help="cleans up by removing all dumps at the end of the program", action="store_true")
+	parser.add_argument("-t","--tags", help="will the analyze user tags and display the tags and words most frequently used in tags of the post - /!\ Caution: can be quite long if no dump present.", action="store_true", default=False)
+	graphrelated.add_argument("-v","--visualization", help="will create a GML file of notes so that Gelphi can vizualize the graph of reblogs", action="store_true")
+	parser.add_argument("-nr","--no-refresh", help="toggle refreshing of notes off - notes will be read from previous dump : Do Not Use if there is no dump available", action="store_true")
+	parser.add_argument("-nd","--no-dumping", help="the program will not make any dump files", action="store_true")
+	parser.add_argument("-na","--no-analysis", help="toggle analysis of notes off", action="store_true")
+	graphrelated.add_argument("-ni", "--no-influence", help ="toggle the analysis of users' influence on reblogs off and as such won't display the bloggers that had the most influence on the post", action="store_true")
+	parser.add_argument("-ng", "--no-graph", help ="toggle off graph generation from notes - caution: graph-related options won't work if no dump exist", action="store_true")
+	args = parser.parse_args()
+
+	LOGGING = args.logging
+	VISUALIZATION = args.visualization
+	REGENERATE = not args.no_refresh
+	ANALYSIS = not args.no_analysis
+	GRAPH_GEN = not args.no_graph
+	POPULAR_TAGS = args.tags
+	EVALUATE_CENTRALITY = not args.no_influence
+	CLEAN = args.cleanup
+	NO_DUMPING = args.no_dumping
+
+	id_post = args.PostId
+	sourceBlog = args.sourceBlog
+
+	dumpfile = "score_dump_"+str(id_post)
+	notesdump = "notes_dump_"+str(id_post)
+	tagsdump = "tags_dump_"+str(id_post)
+
 	results = Queue()
 	lockPrint = Lock()
 	dummy = Lock()
@@ -515,9 +543,12 @@ if __name__=='__main__':
 
 	if CLEAN:
 		print "\n Cleaning up all dumps !"
+		regexdump = "^(score|notes|tags)_dump_[0-9]{12}$"
 		i = 0
 		for f in os.listdir("."):
-			if re.search("^(score|notes|tags)_dump_[0-9]{12}$", f):
+			if NO_DUMPING:
+				regexdump = regexdump.replace("[0-9]{12}", str(id_post))
+			if re.search(regexdump, f):
 				os.remove(os.path.join(".", f))
 				i += 1
 		print " Removed "+str(i)+" dumpfiles !"
