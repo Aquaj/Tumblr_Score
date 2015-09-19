@@ -9,17 +9,17 @@ from bs4 import BeautifulSoup
 
 from multiprocessing import Process, Queue, Value, Lock
 
-import networkx
-
 
 # client = pytumblr.TumblrRestClient(
-#     'uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu',
-#     'bRORrMhgu5uiqQI6jkRK4fmbZBQN3WDqeUmZjX9H6ULRVUJI4u',
-#     '9eiFTlrSFD6XkaKN7lvUmMUdFYiPGkP1a9rxPbQtpKCDXwuuJq',
-#     'WJQ1EbBC52fXV19zsgLd0GMoxlEfC0O8vYLjNAPcwhEa97MMFa'
+#	 'uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu',
+#	 'bRORrMhgu5uiqQI6jkRK4fmbZBQN3WDqeUmZjX9H6ULRVUJI4u',
+#	 '9eiFTlrSFD6XkaKN7lvUmMUdFYiPGkP1a9rxPbQtpKCDXwuuJq',
+#	 'WJQ1EbBC52fXV19zsgLd0GMoxlEfC0O8vYLjNAPcwhEa97MMFa'
 # )
 
 version = "0.9.9"
+
+corpus = ["the", "be", "to", "of", "and", "a", "in", "that", "have", "I", "it", "for", "not", "on", "with", "he", "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", "my", "one", "would", "there", "their", "what", "so", "out", "if", "who", "get", "which", "go", "me", "when", "make", "can", "like", "i", "is", "are", "all", "then", "u"]
 
 client = pytumblr.TumblrRestClient('uErEk0uFQF2JRlLDg5eDA2yBLrUf2J1jq6P9RxTxMTJesYX0Iu')
 
@@ -54,19 +54,6 @@ sourceBlog = args.sourceBlog
 dumpfile = "score_dump_"+str(id_post)
 notesdump = "notes_dump_"+str(id_post)
 tagsdump = "tags_dump_"+str(id_post)
-
-def fragperc(G,p):
-	pS = 0
-	p2 = 0
-	E = len(G.edges())
-	V = len(G.nodes())
-	while (p.value==100.0): pass
-	for pX in range(1,E*V):
-		for p1 in range(E+V):
-			pS = float(pX*p2)/float(E+V)
-			p.value = pS/float(E*V)*13000
-			p2+=1
-	return
 
 def scrapping(cli, postID, blogSource, p, q, lp):
 	url = ""
@@ -136,7 +123,18 @@ def scrapping(cli, postID, blogSource, p, q, lp):
 	except Joss:
 		pass
 
-	q.put_nowait(list(set([n[0] for n in notes])))
+	users = []
+
+	for n in notes:
+		if n[0] not in users:
+			users += [n[0]]
+	for n in notes:
+		if n[1] not in users:
+			n[1] = notes[-1][1]
+
+	users = list(set(users))
+
+	q.put_nowait(users)
 	q.put_nowait(notes)
 	q.put_nowait(replies)
 	q.put_nowait(noteCount)
@@ -160,7 +158,7 @@ def loadingtime(lock, perc=None):
 			lock.release()
 			j+=1
 
-def calcCentrality(G, db, ret, p, lp):
+def calcCentrality(db, ret, p, lp):
 
 	def ssspb(G, s):
 		S = []
@@ -186,6 +184,22 @@ def calcCentrality(G, db, ret, p, lp):
 					P[w].append(v)  # predecessors
 		return S, P, sigma
 
+	def ssspl(G, s):
+		seen = {}				  # level (number of hops) when seen in BFS
+		level = 0				  # the current level
+		nextlevel = {s:1}  # dict of nodes to check at next level
+		while nextlevel:
+			thislevel = nextlevel  # advance to next level
+			nextlevel = {}		 # and start a new list (fringe)
+			for v in thislevel:
+				if v not in seen:
+					seen[v] = level # set the level of vertex v
+					for e in G[v]:
+						nextlevel.update({e:0}) # add neighbors of v
+					yield (v, level)
+			level=level+1
+		del seen
+
 	def _accumulate_basic(betweenness, S, P, sigma, s):
 		delta = dict.fromkeys(S, 0)
 		while S:
@@ -196,55 +210,60 @@ def calcCentrality(G, db, ret, p, lp):
 			if w != s:
 				betweenness[w] += delta[w]
 		return betweenness
+
+	nodes = db.keys()
 	
 	lp.acquire(True)
 	flush()
 	print " Detail of calculations:"
 	lp.release()
-	
-	ya = networkx.closeness_centrality(G)
+
+	p.value = 0.0
+
+	closeness = {}
+	for n in nodes:
+		sp = dict(ssspl(db, n))
+		totsp = sum(sp.values())
+		if totsp > 0.0 and len(nodes) > 1:
+			closeness[n] = (len(sp)-1.0) / totsp
+			# normalize to number of nodes-1 in connected part
+			s = (len(sp)-1.0) / (len(nodes)-1)
+			closeness[n] *= s
+		else:
+			closeness[n] = 0.0
+
 	lp.acquire(True)
 	flush()
 	print "\t - Calculation of Closeness done."
 	lp.release()
 	
 	p.value = 0.0
-	nodes = db.keys()
 	betweenness = dict.fromkeys(nodes, 0.0)
 	for s in nodes:
+		p.value = (float(nodes.index(s)) / len(nodes) * 100.0)
 		S, P, sigma = ssspb(db, s)
 		betweenness = _accumulate_basic(betweenness, S, P, sigma, s)
+	for s in nodes:
+		betweenness[s] *=  1.0 / ((len(nodes) - 1) * (len(nodes) - 2))
 
-	yo = networkx.betweenness_centrality(G)
-
-	print betweenness
-	print yo
-	for i in betweenness.keys():
-	 	if betweenness[i] != yo[i]:
-	 		print "And a one:" + i
-	for i in yo.keys():
-	 	if betweenness[i] != yo[i]:
-	 		print "And a two:" + i
 	lp.acquire(True)
 	flush()
 	print "\t - Calculation of Betweenness done."
 	lp.release()
-	
-	yi = networkx.degree_centrality(G)
+
+	p.value = 50.0
+	degree={}
+	s=1.0/(len(nodes)-1.0)
+	degree=dict((n,(d+1)*s) for n,d in ((n, len(db[n])) for n in nodes))
+
 	lp.acquire(True)
 	flush()
 	print "\t - Calculation of Degree done."
 	lp.release()
-	
-	yu = networkx.load_centrality(G)
-	lp.acquire(True)
-	flush()
-	print "\t - Calculation of Load done."
-	lp.release()
-	ret.put_nowait(ya)
-	ret.put_nowait(yo)
-	ret.put_nowait(yi)
-	ret.put_nowait(yu)
+
+	ret.put_nowait(closeness)
+	ret.put_nowait(betweenness)
+	ret.put_nowait(degree)
 	ret.put('STOP')
 	ret.close()
 	return
@@ -270,11 +289,11 @@ def new_db(src, data, q, p):
 	db = {}
 	maxlength = len(src)
 	progress = 0
-	for user in src:
-		db[user] = []
-		for n in sorted(data):
-			if (n[1] == user):
-				db[user] += [n[0]]
+	for u in src:
+		db[u] = []
+	for n in data:
+		if n[0] not in db[n[1]]:
+			db[n[1]] += [n[0]]
 		progress += 1
 		p.value = progress*1.0/maxlength*100.0
 	q.put(db)
@@ -363,32 +382,23 @@ if __name__=='__main__':
 			database = results.get()
 			p1.terminate()
 			flush()
-			print("\tData formatted!")
-
-			Score = networkx.MultiDiGraph()
-			Score.add_nodes_from(database.iterkeys())
-			print " Creating Score Graph using NetworkX."
-			for source in database.iterkeys():
-				for target in database[source]:
-					Score.add_edge(source, target)
-
-			print " Pickling Score in "+dumpfile+" to save time on next uses."
+			print("\tData formatted!\n")
 			filedump = open(dumpfile, 'w')
-			pickle.dump([Score, noteCount, notes], filedump)
+			pickle.dump([database, noteCount, notes], filedump)
 			filedump.close()
 		else:
-			print " Loading Score from "+dumpfile+"."
+			print " Loading graph from "+dumpfile+"."
 			filedump = open(dumpfile, 'r')
 			args = pickle.load(filedump)
-			Score = args[0]
+			database = args[0]
 			noteCount = args[1]
 			notes = args[2]
 			filedump.close()
 	elif (VISUALIZATION or EVALUATE_CENTRALITY) and trashLord:
-			print " A dump exists and graph-related functionalities have been toggled on:\n\tLoading Score from "+dumpfile+"."
+			print " A dump exists and graph-related functionalities have been toggled on:\n\tLoading graph from "+dumpfile+"."
 			filedump = open(dumpfile, 'r')
 			args = pickle.load(filedump)
-			Score = args[0]
+			database = args[0]
 			noteCount = args[1]
 			notes = args[2]
 			filedump.close()
@@ -452,12 +462,13 @@ if __name__=='__main__':
 			wc = {}
 			for tag in tags.keys():
 				for w in tag.split():
-					word = w
+					word = w.lower()
 					for p in string.punctuation:
 						word = word.replace(p, "")
 					if word not in wc.keys():
 						wc[word] = 0
-					wc[word] += tags[tag]
+					if word not in corpus:
+						wc[word] += tags[tag]
 			
 			popTags = reversed([(i.encode('utf-8'), tags[i]) for i in sorted(tags, key=lambda x: tags[x])][-10:])
 			flush()
@@ -476,21 +487,18 @@ if __name__=='__main__':
 			print "\n Starting calculation of centrality."
 			progress.value = 100.0
 			p1 = Process(target = loadingtime, args=[lockPrint, progress])
-			p2 = Process(target = calcCentrality, args=(Score, database, results, progress, lockPrint))
-			p3 = Process(target = fragperc, args=(Score, progress))
+			p2 = Process(target = calcCentrality, args=(database, results, progress, lockPrint))
 			p2.start()
-			p3.start()
 			p1.start()
 			for i in iter(results.get, 'STOP'):
 				central.append(i)
 			p1.terminate()
-			p3.terminate()
 
 			flush()
 			print "\tCentrality values calculated!"
 
 			print "\n Using centrality to establish who had the most influence on the notes.\n"
-			winners = [[i for i in sorted(central[j], key=lambda x: central[j][x])][-10:] for j in range (4)]
+			winners = [[i for i in sorted(central[j], key=lambda x: central[j][x])][-10:] for j in range (len(central))]
 
 			influence_scores = {}
 
@@ -506,7 +514,7 @@ if __name__=='__main__':
 				print " \t"+str(len(leaderboard)-leaderboard.index(score))+" - "+str(score[0])+" - influence: "+str(score[1])
 
 	if CLEAN:
-		print " Cleaning up all dumps !"
+		print "\n Cleaning up all dumps !"
 		i = 0
 		for f in os.listdir("."):
 			if re.search("^(score|notes|tags)_dump_[0-9]{12}$", f):
