@@ -292,7 +292,7 @@ if __name__=='__main__':
 
 	multiprocessing.freeze_support()
 
-	version = "0.9.9"
+	version = "1.0.5"
 
 	corpus = ["the", "be", "to", "of", "and", "a", "in", "that", "have", "I", "it", "for", "not", "on", "with", "im" "he", "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", "my", "one", "would", "there", "their", "what", "so", "out", "if", "who", "get", "which", "go", "me", "when", "make", "can", "like", "i", "is", "are", "all", "then", "u"]
 
