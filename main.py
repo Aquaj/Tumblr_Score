@@ -541,13 +541,14 @@ if __name__=='__main__':
 			for score in reversed(leaderboard):
 				print " \t"+str(len(leaderboard)-leaderboard.index(score))+" - "+str(score[0])+" - influence: "+str(score[1])
 
-	if CLEAN:
-		print "\n Cleaning up all dumps !"
+	if CLEAN or NO_DUMPING:
 		regexdump = "^(score|notes|tags)_dump_[0-9]{12}$"
 		i = 0
 		for f in os.listdir("."):
 			if NO_DUMPING:
 				regexdump = regexdump.replace("[0-9]{12}", str(id_post))
+			else:
+				print "\n Cleaning up all dumps !"
 			if re.search(regexdump, f):
 				os.remove(os.path.join(".", f))
 				i += 1
